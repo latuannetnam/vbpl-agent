@@ -1,0 +1,19 @@
+version: "3.8"
+
+services:
+  vbpl-pipeline:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.pipeline
+    image: vbpl-kb-pipeline:latest
+    restart: unless-stopped
+    volumes:
+      - vbpl-pipeline-data:/app/data
+    environment:
+      - VBPL_KB_DATA_DIR=/app/data
+      - VBPL_KB_VBPL_GATEWAY_URL=https://vbpl-bientap-gateway.moj.gov.vn/api/qtdc/public
+      - VBPL_KB_ONYX_BASE_URL=http://localhost:8080
+      - VBPL_KB_ONYX_API_KEY=
+
+volumes:
+  vbpl-pipeline-data:
