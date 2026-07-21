@@ -25,3 +25,15 @@ def test_canonical_page_quarantines_missing_explicit_legal_status() -> None:
 
     assert result.verified is False
     assert result.reason == "missing explicit legal status"
+
+
+def test_canonical_page_resolves_json_ld_legal_force() -> None:
+    result = resolve_canonical_page(
+        "117180",
+        '<script type="application/ld+json">{"@type":"Legislation","name":"Quyết định 279","url":"https://vbpl.vn/van-ban/chi-tiet/q--117180","legislationLegalForce":"InForce"}</script>',
+        datetime(2026, 7, 21, tzinfo=UTC),
+    )
+
+    assert result.verified is True
+    assert result.title == "Quyết định 279"
+    assert result.eff_status == "Còn hiệu lực"
