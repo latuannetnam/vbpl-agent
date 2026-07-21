@@ -82,6 +82,16 @@ def test_crawl_reports_catalog_and_fetch_progress(fake_client, store) -> None:
     assert events[-1] == "crawl: completed; documents=2/2 (failed=0)"
 
 
+def test_crawl_reports_failed_detail_id_and_reason(fake_client, store) -> None:
+    fake_client.catalog_pages = [["1", "2"]]
+    fake_client.fail_detail_ids = {"2"}
+    events: list[str] = []
+
+    DailyCrawler(fake_client, store, progress=events.append).run("failed-detail")
+
+    assert "crawl: failed 2 (Exception: Failed to fetch detail)" in events
+
+
 def test_catalog_failure_is_partial_and_never_reports_full_coverage(fake_client, store) -> None:
     def fail_catalog(page_number: int, page_size: int):
         raise RuntimeError("gateway unavailable")

@@ -93,8 +93,12 @@ class DailyCrawler:
                 )
                 self.store.record_status(obs)
                 detail_count += 1
-            except Exception:
+            except Exception as exc:
                 failed_ids.append(vbpl_id)
+                reason = " ".join(str(exc).split())[:200]
+                self._report(
+                    f"crawl: failed {vbpl_id} ({type(exc).__name__}: {reason})"
+                )
 
             if processed_count % 100 == 0:
                 self._report(
