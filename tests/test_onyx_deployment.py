@@ -26,3 +26,19 @@ def test_start_script_uses_scoped_legacy_shutdown_and_project_name() -> None:
     assert "git clone --depth 1 https://github.com/onyx-dot-app/onyx.git" in script
     assert "Remove-Volume" not in script
     assert "docker volume rm" not in script
+
+
+def test_pipeline_uses_the_project_owned_onyx_network() -> None:
+    compose = (ROOT / "docker-compose.vbpl.yml").read_text(encoding="utf-8")
+
+    assert "http://api_server:8080" in compose
+    assert "name: vbpl-onyx_default" in compose
+    assert "external: true" in compose
+
+
+def test_environment_example_exposes_ui_port_and_verified_routes() -> None:
+    environment = (ROOT / ".env.example").read_text(encoding="utf-8")
+
+    assert "ONYX_WEB_UI_PORT=3001" in environment
+    assert "VBPL_KB_ONYX_INGESTION_UPSERT_PATH=/onyx-api/ingestion" in environment
+    assert "VBPL_KB_ONYX_SEARCH_PATH=/admin/search" in environment

@@ -11,12 +11,19 @@ services:
     environment:
       - VBPL_KB_DATA_DIR=/app/data
       - VBPL_KB_VBPL_GATEWAY_URL=https://vbpl-bientap-gateway.moj.gov.vn/api/qtdc/public
-      - VBPL_KB_ONYX_BASE_URL=${VBPL_KB_ONYX_BASE_URL:?set a reachable Onyx URL}
+      - VBPL_KB_ONYX_BASE_URL=${VBPL_KB_ONYX_BASE_URL:-http://api_server:8080}
       - VBPL_KB_ONYX_API_KEY=${VBPL_KB_ONYX_API_KEY:?set an Onyx API key}
-      - VBPL_KB_ONYX_INGESTION_UPSERT_PATH=${VBPL_KB_ONYX_INGESTION_UPSERT_PATH:?set the pinned Onyx upsert path}
-      - VBPL_KB_ONYX_INGESTION_DELETE_PATH=${VBPL_KB_ONYX_INGESTION_DELETE_PATH:-}
-      - VBPL_KB_ONYX_SEARCH_PATH=${VBPL_KB_ONYX_SEARCH_PATH:-}
-      - VBPL_KB_ONYX_HEALTH_PATH=${VBPL_KB_ONYX_HEALTH_PATH:-}
+      - VBPL_KB_ONYX_INGESTION_UPSERT_PATH=${VBPL_KB_ONYX_INGESTION_UPSERT_PATH:-/onyx-api/ingestion}
+      - VBPL_KB_ONYX_INGESTION_DELETE_PATH=${VBPL_KB_ONYX_INGESTION_DELETE_PATH:-/onyx-api/ingestion/{document_id}}
+      - VBPL_KB_ONYX_SEARCH_PATH=${VBPL_KB_ONYX_SEARCH_PATH:-/admin/search}
+      - VBPL_KB_ONYX_HEALTH_PATH=${VBPL_KB_ONYX_HEALTH_PATH:-/health}
+    networks:
+      - onyx
 
 volumes:
   vbpl-pipeline-data:
+
+networks:
+  onyx:
+    external: true
+    name: vbpl-onyx_default
