@@ -1,4 +1,5 @@
 import sqlite3
+import json
 from datetime import datetime, UTC
 from pathlib import Path
 from vbpl_kb.models import StatusObservation, CrawlRun
@@ -152,6 +153,31 @@ class StateStore:
                 INSERT OR REPLACE INTO status_observations (vbpl_id, eff_status, eff_from, checked_at, content_hash, run_id)
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (obs.vbpl_id, obs.eff_status, obs.eff_from, obs.checked_at.isoformat(), obs.content_hash, obs.run_id))
+
+    def projection_matches(
+        self,
+        document_id: str,
+        content: str,
+        link: str,
+        metadata: dict,
+        run_id: str,
+    ) -> bool:
+        row = self.conn.execute(
+            """SELECT content, link, metadata_json, run_id
+               FROM onyx_projection WHERE document_id = ?""",
+            (document_id,),
+        ).fetchone()
+        if row is None or row["run_id"] != run_id:
+            return False
+        try:
+            stored_metadata = json.loads(row["metadata_json"])
+        except json.JSONDecodeError:
+            return False
+        return (
+            row["content"] == content
+            and row["link"] == link
+            and stored_metadata == metadata
+        )
 
     def next_catalog_page(self, run_id: str) -> int:
         row = self.conn.execute(

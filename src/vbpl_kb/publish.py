@@ -135,6 +135,16 @@ class Publisher:
                 link=doc.link,
                 metadata=doc.metadata
             )
+
+            if self.store.projection_matches(
+                final_doc.document_id,
+                final_doc.content,
+                final_doc.link,
+                final_doc.metadata,
+                run_id,
+            ):
+                current_doc_ids.add(final_doc.document_id)
+                continue
             
             # Upsert to Onyx
             self.onyx.upsert(final_doc)

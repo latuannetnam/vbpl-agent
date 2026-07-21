@@ -38,3 +38,28 @@ def test_upsert_requires_a_confirmed_endpoint_configuration(tmp_path, onyx_docum
 
     with pytest.raises(RuntimeError, match="ingestion endpoint is not configured"):
         OnyxIngestionClient(settings).upsert(onyx_document)
+
+
+@respx.mock
+def test_upsert_retries_a_read_timeout(settings, onyx_document) -> None:
+    settings = settings.model_copy(update={"onyx_ingestion_upsert_path": "/onyx-api/ingestion"})
+    route = respx.post(f"{settings.onyx_base_url}/onyx-api/ingestion")
+    route.side_effect = [
+        httpx.ReadTimeout("timed out"),
+        httpx.Response(200, json={"document_id": "vbpl:123"}),
+    ]
+
+    OnyxIngestionClient(settings).upsert(onyx_document)
+
+    assert route.call_count == 2
+
+
+def test_onyx_timeout_is_independently_configurable(settings) -> None:
+    settings = Settings(
+        onyx_request_timeout_seconds=120,
+        onyx_ingestion_upsert_path="/onyx-api/ingestion",
+    )
+
+    client = OnyxIngestionClient(settings)
+
+    assert client.client.timeout.read == 120

@@ -15,4 +15,5 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     freshness_hours: int = 24
     request_timeout_seconds: float = 30.0
+    onyx_request_timeout_seconds: float = 120.0
     max_pages: int | None = None

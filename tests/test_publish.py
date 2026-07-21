@@ -75,6 +75,27 @@ def test_successful_publish_reports_progress(store, fake_onyx) -> None:
         f"publish: completed; upserted={summary.upserted_count} deleted={summary.deleted_count}"
     )
 
+
+def test_publish_resumes_already_recorded_projections_for_same_run(store, fake_onyx) -> None:
+    run_id = store.begin_run("resume-publish")
+    store.record_snapshot(run_id, "123", "detail", '{"data": {"id":123, "title": "Doc 123", "fullText": "Điều 1. X"}}', "hash1")
+    store.record_status(StatusObservation(
+        vbpl_id="123",
+        eff_status="Còn hiệu lực",
+        eff_from="2024-01-01",
+        checked_at=datetime.now(UTC),
+        content_hash="hash1",
+        run_id=run_id,
+    ))
+    store.finish_run(run_id, "completed", 1.0)
+    Publisher(store, fake_onyx).publish(run_id)
+
+    resumed_onyx = FakeOnyxIngestionClient()
+    summary = Publisher(store, resumed_onyx).publish(run_id)
+
+    assert summary.upserted_count == 0
+    assert resumed_onyx.upserted == []
+
 def test_deleted_instrument_removal(store, fake_onyx) -> None:
     run1 = store.begin_run("run-1")
     store.record_snapshot(run1, "123", "detail", '{"data": {"id":123, "title": "Doc 123", "fullText": "Điều 1. X"}}', "hash1")
