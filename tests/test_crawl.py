@@ -71,6 +71,17 @@ def test_crawl_checkpoint_restart(fake_client, store) -> None:
     assert called_ids == ["2"]
 
 
+def test_crawl_reports_catalog_and_fetch_progress(fake_client, store) -> None:
+    fake_client.catalog_pages = [["1", "2"]]
+    events: list[str] = []
+
+    DailyCrawler(fake_client, store, progress=events.append).run("progress-crawl")
+
+    assert events[0] == "crawl: catalog page 1 discovered; documents=2"
+    assert "crawl: fetched 2/2 documents (failed=0)" in events
+    assert events[-1] == "crawl: completed; documents=2/2 (failed=0)"
+
+
 def test_catalog_failure_is_partial_and_never_reports_full_coverage(fake_client, store) -> None:
     def fail_catalog(page_number: int, page_size: int):
         raise RuntimeError("gateway unavailable")

@@ -1,5 +1,6 @@
 import hashlib
 from datetime import datetime, UTC
+from collections.abc import Callable
 from vbpl_kb.state import StateStore
 from vbpl_kb.vbpl_client import VBPLClient
 from vbpl_kb.models import StatusObservation
@@ -11,10 +12,23 @@ class CrawlSummary:
         self.coverage = coverage
         self.catalog_complete = catalog_complete
 
+ProgressReporter = Callable[[str], None]
+
+
 class DailyCrawler:
-    def __init__(self, client: VBPLClient, store: StateStore):
+    def __init__(
+        self,
+        client: VBPLClient,
+        store: StateStore,
+        progress: ProgressReporter | None = None,
+    ):
         self.client = client
         self.store = store
+        self.progress = progress
+
+    def _report(self, message: str) -> None:
+        if self.progress is not None:
+            self.progress(message)
 
     def run(self, revision: str) -> CrawlSummary:
         run_id = self.store.begin_run(revision)
@@ -36,6 +50,9 @@ class DailyCrawler:
                     break
                 page_ids = [str(doc["id"]) for doc in page_docs if "id" in doc]
                 self.store.record_catalog_page(run_id, page, page_ids)
+                self._report(
+                    f"crawl: catalog page {page} discovered; documents={len(self.store.catalog_ids(run_id))}"
+                )
                 page += 1
             except Exception:
                 # An unknown tail of the catalog means this run cannot safely replace
@@ -49,7 +66,7 @@ class DailyCrawler:
         detail_count = 0
         failed_ids: list[str] = []
         
-        for vbpl_id in catalog_ids:
+        for processed_count, vbpl_id in enumerate(catalog_ids, start=1):
             cursor = self.store.conn.cursor()
             cursor.execute(
                 "SELECT 1 FROM raw_snapshots WHERE run_id = ? AND vbpl_id = ? AND endpoint = 'detail'",
@@ -79,6 +96,11 @@ class DailyCrawler:
             except Exception:
                 failed_ids.append(vbpl_id)
 
+            if processed_count % 100 == 0:
+                self._report(
+                    f"crawl: fetched {detail_count}/{len(catalog_ids)} documents (failed={len(failed_ids)})"
+                )
+
         # Calculate coverage
         total = len(catalog_ids)
         coverage = detail_count / total if total > 0 and catalog_complete else 0.0
@@ -86,6 +108,12 @@ class DailyCrawler:
         # Determine status
         status = "completed" if catalog_complete and len(failed_ids) == 0 else "partial"
         self.store.finish_run(run_id, status, coverage)
+        self._report(
+            f"crawl: fetched {detail_count}/{total} documents (failed={len(failed_ids)})"
+        )
+        self._report(
+            f"crawl: completed; documents={detail_count}/{total} (failed={len(failed_ids)})"
+        )
 
         return CrawlSummary(
             detail_count=detail_count,
