@@ -1,7 +1,9 @@
 import json
 import typer
 from pathlib import Path
+from typing import Any
 from datetime import datetime, UTC
+import httpx
 from vbpl_kb.config import Settings
 from vbpl_kb.state import StateStore
 from vbpl_kb.vbpl_client import VBPLClient
@@ -111,6 +113,79 @@ def status(
     else:
         typer.echo(json.dumps({"status": "partial", "run_id": run.run_id, "message": "Active run finished_at is missing"}))
         raise typer.Exit(code=2)
+
+@app.command()
+def evaluate(
+    benchmark_path: str = typer.Argument(..., help="Path to benchmark JSON file")
+) -> None:
+    settings = Settings()
+    path = Path(benchmark_path)
+    if not path.exists():
+        typer.echo(f"Benchmark file not found: {path}")
+        raise typer.Exit(code=1)
+        
+    with open(path, "r", encoding="utf-8") as f:
+        cases = json.load(f)
+        
+    client = httpx.Client(timeout=settings.request_timeout_seconds)
+    
+    def search(query_str: str) -> list[dict[str, Any]]:
+        url = f"{settings.onyx_base_url}/api/query"
+        headers = {}
+        api_key = settings.onyx_api_key.get_secret_value()
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+            
+        try:
+            response = client.post(url, json={"query": query_str}, headers=headers)
+            if response.status_code != 200:
+                return []
+            data = response.json()
+            results = []
+            raw_results = data.get("results", data.get("documents", data))
+            if not isinstance(raw_results, list):
+                raw_results = []
+                
+            for r in raw_results:
+                meta = r.get("metadata", {})
+                doc_id = r.get("id") or r.get("document_id") or ""
+                vbpl_id = doc_id.split(":")[-1] if ":" in doc_id else doc_id
+                
+                legal_status = meta.get("legal_status", "")
+                status_checked_at_str = meta.get("status_checked_at", "")
+                
+                status_fresh = True
+                if status_checked_at_str:
+                    try:
+                        checked_at = datetime.fromisoformat(status_checked_at_str)
+                        age_seconds = (datetime.now(UTC) - checked_at).total_seconds()
+                        if age_seconds > 86400 or legal_status not in ["Còn hiệu lực", "Hết hiệu lực một phần"]:
+                            status_fresh = False
+                    except Exception:
+                        status_fresh = False
+                else:
+                    status_fresh = False
+                    
+                provision_key = meta.get("citation_structure", "")
+                
+                results.append({
+                    "vbpl_id": vbpl_id,
+                    "provision_key": provision_key,
+                    "status_fresh": status_fresh
+                })
+            return results
+        except Exception:
+            return []
+            
+    from vbpl_kb.evaluate import evaluate_retrieval
+    report = evaluate_retrieval(cases, search)
+    
+    typer.echo(f"Evaluation complete. Passed: {report.passed}")
+    typer.echo(f"Safety failures: {report.current_law_safety_failures}")
+    typer.echo(f"Metrics: {report.metrics}")
+    
+    if not report.passed:
+        raise typer.Exit(code=1)
 
 if __name__ == "__main__":
     app()

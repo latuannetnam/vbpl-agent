@@ -1,0 +1,14 @@
+[
+  {
+    "query": "Nghị định số 12/2024/NĐ-CP Điều 8",
+    "expected_vbpl_id": "123",
+    "expected_provision_key": "dieu-8",
+    "requires_current_status": true
+  },
+  {
+    "query": "Bãi bỏ Điều 8 Nghị định 12/2024",
+    "expected_vbpl_id": "124",
+    "expected_provision_key": "dieu-1",
+    "requires_current_status": false
+  }
+]
