@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     onyx_api_key: SecretStr = SecretStr("")
     onyx_ingestion_upsert_path: str | None = None
     onyx_ingestion_delete_path: str | None = None
+    onyx_ingestion_cc_pair_id: int | None = None
     onyx_search_path: str | None = None
     onyx_health_path: str | None = None
     data_dir: Path = Path("data")

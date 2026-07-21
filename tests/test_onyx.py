@@ -1,4 +1,5 @@
 import httpx
+import json
 import pytest
 import respx
 from vbpl_kb.onyx import OnyxIngestionClient
@@ -21,8 +22,12 @@ def test_upsert_sends_stable_id_and_provenance(settings, onyx_document) -> None:
         return_value=httpx.Response(200, json={"id": "vbpl:123"})
     )
     OnyxIngestionClient(settings).upsert(onyx_document)
-    assert b"vbpl:123" in route.calls[0].request.content
-    assert b"status_checked_at" in route.calls[0].request.content
+    payload = json.loads(route.calls[0].request.content)
+    assert payload["document"]["id"] == "vbpl:123"
+    assert payload["document"]["sections"] == [
+        {"text": "Content of document 123.", "link": "https://vbpl.vn/doc/123"}
+    ]
+    assert payload["document"]["metadata"]["status_checked_at"] == "2026-07-21T00:00:00+00:00"
 
 
 def test_upsert_requires_a_confirmed_endpoint_configuration(tmp_path, onyx_document) -> None:

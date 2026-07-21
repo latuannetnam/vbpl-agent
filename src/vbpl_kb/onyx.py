@@ -32,12 +32,19 @@ class OnyxIngestionClient:
         if not self.settings.onyx_ingestion_upsert_path:
             raise RuntimeError("Onyx ingestion endpoint is not configured")
         url = f"{self.settings.onyx_base_url.rstrip('/')}{self.settings.onyx_ingestion_upsert_path}"
-        payload = {
-            "id": doc.document_id,
-            "content": doc.content,
-            "link": doc.link,
-            "metadata": doc.metadata
+        semantic_identifier = doc.metadata.get("document_number") or doc.document_id
+        payload: dict[str, object] = {
+            "document": {
+                "id": doc.document_id,
+                "semantic_identifier": semantic_identifier,
+                "title": doc.metadata.get("title", semantic_identifier),
+                "sections": [{"text": doc.content, "link": doc.link}],
+                "source": "file",
+                "metadata": doc.metadata,
+            }
         }
+        if self.settings.onyx_ingestion_cc_pair_id is not None:
+            payload["cc_pair_id"] = self.settings.onyx_ingestion_cc_pair_id
         response = self.client.post(url, json=payload, headers=self._headers())
         if not 200 <= response.status_code < 300:
             # Raise non-2xx error without secrets

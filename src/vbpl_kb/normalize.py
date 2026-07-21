@@ -102,7 +102,9 @@ def normalize_instrument(raw: dict[str, Any], status: StatusObservation, revisio
         "legal_area": raw.get("legalArea", ""),
         "issuer": raw.get("agencyName", raw.get("issuer", "")),
         "scope": raw.get("scope", ""),
-        "citation_structure": citation_structure
+        "citation_structure": citation_structure,
+        "document_number": raw.get("docNum", ""),
+        "title": title,
     }
     
     return OnyxDocument(
