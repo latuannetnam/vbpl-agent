@@ -1,5 +1,6 @@
 import json
 import re
+from collections.abc import Callable
 from vbpl_kb.state import StateStore
 from vbpl_kb.onyx import OnyxIngestionClient
 from vbpl_kb.models import OnyxDocument
@@ -21,6 +22,9 @@ class PublishSummary:
         self.deleted_count = deleted_count
         self.run_id = run_id
 
+
+ProgressReporter = Callable[[str], None]
+
 def _get_doc_sig_from_title(title: str) -> tuple[str, str] | None:
     doc_types = ["Nghị định", "Luật", "Thông tư", "Quyết định", "Nghị quyết", "Hiến pháp", "Sắc lệnh", "Pháp lệnh", "Chỉ thị"]
     doc_types_regex = "|".join(doc_types)
@@ -34,9 +38,19 @@ def _get_doc_sig_from_title(title: str) -> tuple[str, str] | None:
     return None
 
 class Publisher:
-    def __init__(self, store: StateStore, onyx: OnyxIngestionClient):
+    def __init__(
+        self,
+        store: StateStore,
+        onyx: OnyxIngestionClient,
+        progress: ProgressReporter | None = None,
+    ):
         self.store = store
         self.onyx = onyx
+        self.progress = progress
+
+    def _report(self, message: str) -> None:
+        if self.progress is not None:
+            self.progress(message)
 
     def publish(self, run_id: str) -> PublishSummary:
         # Load run
@@ -50,6 +64,7 @@ class Publisher:
         cursor = self.store.conn.cursor()
         cursor.execute("SELECT vbpl_id, relative_path FROM raw_snapshots WHERE run_id = ?", (run_id,))
         snapshots = cursor.fetchall()
+        self._report(f"publish: preparing {len(snapshots)} documents")
         
         # Build instrument index from all known status observations
         instrument_index: dict[str, str] = {}
@@ -133,6 +148,10 @@ class Publisher:
                 
             current_doc_ids.add(final_doc.document_id)
             upserted_count += 1
+            if upserted_count % 100 == 0:
+                self._report(f"publish: upserted {upserted_count}/{len(snapshots)} documents")
+
+        self._report(f"publish: upserted {upserted_count}/{len(snapshots)} documents")
 
         # Deletion logic: documents that were active but are not in the current run
         deleted_count = 0
@@ -146,9 +165,16 @@ class Publisher:
             for doc_id in to_delete:
                 self.onyx.delete(doc_id)
                 deleted_count += 1
+                if deleted_count % 100 == 0:
+                    self._report(f"publish: deleted {deleted_count}/{len(to_delete)} stale documents")
+            if to_delete:
+                self._report(f"publish: deleted {deleted_count}/{len(to_delete)} stale documents")
 
         # Mark the revision active
         self.store.set_active_run(run_id)
+        self._report(
+            f"publish: completed; upserted={upserted_count} deleted={deleted_count}"
+        )
 
         return PublishSummary(
             upserted_count=upserted_count,
