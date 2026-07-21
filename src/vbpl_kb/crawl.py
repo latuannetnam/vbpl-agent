@@ -1,9 +1,11 @@
 import hashlib
+import json
 from datetime import datetime, UTC
 from collections.abc import Callable
 from vbpl_kb.state import StateStore
 from vbpl_kb.vbpl_client import VBPLClient
 from vbpl_kb.models import StatusObservation
+from vbpl_kb.vbpl_fallback import resolve_canonical_page
 
 class CrawlSummary:
     def __init__(self, detail_count: int, failed_ids: list[str], coverage: float, catalog_complete: bool):
@@ -78,6 +80,24 @@ class DailyCrawler:
 
             try:
                 detail = self.client.get_detail(vbpl_id)
+                if not detail.title or not detail.eff_status:
+                    resolution = resolve_canonical_page(
+                        vbpl_id,
+                        self.client.get_canonical_page(vbpl_id),
+                        datetime.now(UTC),
+                    )
+                    if not resolution.verified:
+                        raise ValueError(resolution.reason)
+                    if resolution.title is None or resolution.eff_status is None:
+                        raise ValueError("fallback verification returned incomplete data")
+                    detail.title = resolution.title
+                    detail.eff_status = resolution.eff_status
+                    detail.raw_data["title"] = resolution.title
+                    detail.raw_data["effStatus"] = {"name": resolution.eff_status}
+                    detail.raw_json = json.dumps({"data": detail.raw_data}, ensure_ascii=False)
+                    self._report(
+                        f"crawl: fallback verified {vbpl_id} (canonical_page)"
+                    )
                 # Compute hash
                 content_hash = hashlib.sha256(detail.raw_json.encode("utf-8")).hexdigest()
                 # Record snapshot

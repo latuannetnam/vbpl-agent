@@ -9,6 +9,7 @@ class FakeVBPLClient:
         self.fail_detail_ids = set()
         self.fail_catalog_pages = set()
         self.catalog_calls = []
+        self.canonical_pages: dict[str, str] = {}
 
     def list_catalog_page(self, page_number: int, page_size: int):
         self.catalog_calls.append(page_number)
@@ -37,6 +38,9 @@ class FakeVBPLClient:
             raw_json=json.dumps({"data": raw_data}),
             raw_data=raw_data
         )
+
+    def get_canonical_page(self, vbpl_id: str) -> str:
+        return self.canonical_pages[vbpl_id]
 
 @pytest.fixture
 def fake_client():
@@ -90,6 +94,24 @@ def test_crawl_reports_failed_detail_id_and_reason(fake_client, store) -> None:
     DailyCrawler(fake_client, store, progress=events.append).run("failed-detail")
 
     assert "crawl: failed 2 (Exception: Failed to fetch detail)" in events
+
+
+def test_crawl_uses_verified_canonical_fallback_for_missing_status(fake_client, store) -> None:
+    fake_client.catalog_pages = [["1"]]
+    original = fake_client.get_detail
+
+    def missing_status(vbpl_id):
+        detail = original(vbpl_id)
+        detail.eff_status = None
+        return detail
+
+    fake_client.get_detail = missing_status
+    fake_client.canonical_pages["1"] = '<script type="application/ld+json">{"@type":"Legislation","name":"Quyết định 1","legislationLegalForce":"InForce"}</script>'
+
+    summary = DailyCrawler(fake_client, store).run("canonical-fallback")
+
+    assert summary.coverage == 1.0
+    assert store.latest_status("1").eff_status == "Còn hiệu lực"
 
 
 def test_catalog_failure_is_partial_and_never_reports_full_coverage(fake_client, store) -> None:

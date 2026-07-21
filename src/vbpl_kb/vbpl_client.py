@@ -90,17 +90,20 @@ class VBPLClient:
         
         if "id" not in doc_data or doc_data["id"] is None:
             raise VBPLSchemaError("Missing required field 'data.id'")
-        if "title" not in doc_data or doc_data["title"] is None:
-            raise VBPLSchemaError("Missing required field 'data.title'")
-        if "effStatus" not in doc_data or not isinstance(doc_data["effStatus"], dict) or "name" not in doc_data["effStatus"] or doc_data["effStatus"]["name"] is None:
-            raise VBPLSchemaError("Missing required field 'data.effStatus.name'")
-
         eff_from = doc_data.get("effFrom")
+        title = doc_data.get("title")
+        eff_status = doc_data.get("effStatus")
         return VBPLDetail(
             vbpl_id=str(doc_data["id"]),
-            title=str(doc_data["title"]),
-            eff_status=str(doc_data["effStatus"]["name"]),
+            title=title if isinstance(title, str) else "",
+            eff_status=eff_status.get("name", "") if isinstance(eff_status, dict) else "",
             eff_from=str(eff_from) if eff_from is not None else None,
             raw_json=response.text,
             raw_data=doc_data
         )
+
+    def get_canonical_page(self, vbpl_id: str) -> str:
+        response = self._request_with_retry(
+            "GET", f"https://vbpl.vn/van-ban/chi-tiet/--{vbpl_id}"
+        )
+        return response.text

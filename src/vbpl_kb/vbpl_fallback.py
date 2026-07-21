@@ -33,7 +33,8 @@ def resolve_canonical_page(
             if not isinstance(entry, dict) or entry.get("@type") != "Legislation":
                 continue
             title = entry.get("name")
-            status = _LEGAL_FORCE_MAP.get(entry.get("legislationLegalForce"))
+            force = entry.get("legislationLegalForce")
+            status = _LEGAL_FORCE_MAP.get(force) if isinstance(force, str) else None
             if isinstance(title, str) and title.strip() and status:
                 return FallbackResolution(True, title.strip(), status, "canonical_page", checked_at)
     text = _html_to_text(html)
