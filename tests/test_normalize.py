@@ -49,3 +49,21 @@ def test_partial_effect_status(raw_instrument, status) -> None:
     assert doc.metadata["legal_status"] == "Hết hiệu lực một phần"
     assert "Status: Hết hiệu lực một phần" in doc.content
 
+
+def test_projection_uses_real_vbpl_html_content_and_citable_subheadings(status) -> None:
+    raw = {
+        "id": 187835,
+        "title": "Nghị định số 135/2026/NĐ-CP Quy định cơ chế",
+        "docNum": "135/2026/NĐ-CP",
+        "documentContent": {
+            "content": "<p>Điều 1. Phạm vi điều chỉnh</p><p>1. Nội dung khoản một.</p><p>a) Nội dung điểm a.</p>"
+        },
+    }
+
+    doc = normalize_instrument(raw, status, "vbpl-2026-07-21")
+
+    assert "## Điều 1." in doc.content
+    assert "### Khoản 1." in doc.content
+    assert "#### Điểm a." in doc.content
+    assert "Nội dung điểm a." in doc.content
+    assert doc.link.endswith("--187835")

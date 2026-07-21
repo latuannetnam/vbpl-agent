@@ -1,19 +1,22 @@
-version: "3.8"
-
 services:
   vbpl-pipeline:
     build:
       context: .
       dockerfile: docker/Dockerfile.pipeline
     image: vbpl-kb-pipeline:latest
-    restart: unless-stopped
+    restart: "no"
+    command: ["run-daily", "--db-path", "/app/data/state.sqlite3"]
     volumes:
       - vbpl-pipeline-data:/app/data
     environment:
       - VBPL_KB_DATA_DIR=/app/data
       - VBPL_KB_VBPL_GATEWAY_URL=https://vbpl-bientap-gateway.moj.gov.vn/api/qtdc/public
-      - VBPL_KB_ONYX_BASE_URL=http://localhost:8080
-      - VBPL_KB_ONYX_API_KEY=
+      - VBPL_KB_ONYX_BASE_URL=${VBPL_KB_ONYX_BASE_URL:?set a reachable Onyx URL}
+      - VBPL_KB_ONYX_API_KEY=${VBPL_KB_ONYX_API_KEY:?set an Onyx API key}
+      - VBPL_KB_ONYX_INGESTION_UPSERT_PATH=${VBPL_KB_ONYX_INGESTION_UPSERT_PATH:?set the pinned Onyx upsert path}
+      - VBPL_KB_ONYX_INGESTION_DELETE_PATH=${VBPL_KB_ONYX_INGESTION_DELETE_PATH:-}
+      - VBPL_KB_ONYX_SEARCH_PATH=${VBPL_KB_ONYX_SEARCH_PATH:-}
+      - VBPL_KB_ONYX_HEALTH_PATH=${VBPL_KB_ONYX_HEALTH_PATH:-}
 
 volumes:
   vbpl-pipeline-data:

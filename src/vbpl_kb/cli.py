@@ -81,6 +81,7 @@ def run_daily(
 def status(
     db_path: str = typer.Option("data/state.sqlite3", "--db-path")
 ) -> None:
+    settings = Settings()
     path = Path(db_path)
     if not path.exists():
         typer.echo(json.dumps({"status": "none", "message": "Database file does not exist"}))
@@ -101,10 +102,10 @@ def status(
         typer.echo(json.dumps({"status": "partial", "run_id": run.run_id, "message": "Active run is partial or failed"}))
         raise typer.Exit(code=2)
         
-    # Check freshness (within 24 hours)
+    # Check freshness using the same configured window as the daily verifier.
     if run.finished_at:
         age_seconds = (datetime.now(UTC) - run.finished_at).total_seconds()
-        if age_seconds > 86400:
+        if age_seconds > settings.freshness_hours * 3600:
             typer.echo(json.dumps({"status": "stale", "run_id": run.run_id, "finished_at": run.finished_at.isoformat()}))
             raise typer.Exit(code=2)
         else:
@@ -119,6 +120,9 @@ def evaluate(
     benchmark_path: str = typer.Argument(..., help="Path to benchmark JSON file")
 ) -> None:
     settings = Settings()
+    if not settings.onyx_search_path:
+        typer.echo("Evaluation blocked: Onyx search endpoint is not configured")
+        raise typer.Exit(code=1)
     path = Path(benchmark_path)
     if not path.exists():
         typer.echo(f"Benchmark file not found: {path}")
@@ -130,7 +134,7 @@ def evaluate(
     client = httpx.Client(timeout=settings.request_timeout_seconds)
     
     def search(query_str: str) -> list[dict[str, Any]]:
-        url = f"{settings.onyx_base_url}/api/query"
+        url = f"{settings.onyx_base_url.rstrip('/')}{settings.onyx_search_path}"
         headers = {}
         api_key = settings.onyx_api_key.get_secret_value()
         if api_key:
@@ -159,7 +163,7 @@ def evaluate(
                     try:
                         checked_at = datetime.fromisoformat(status_checked_at_str)
                         age_seconds = (datetime.now(UTC) - checked_at).total_seconds()
-                        if age_seconds > 86400 or legal_status not in ["Còn hiệu lực", "Hết hiệu lực một phần"]:
+                        if age_seconds > settings.freshness_hours * 3600 or legal_status not in ["Còn hiệu lực", "Hết hiệu lực một phần"]:
                             status_fresh = False
                     except Exception:
                         status_fresh = False

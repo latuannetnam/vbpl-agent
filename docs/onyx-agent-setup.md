@@ -36,3 +36,11 @@ Create the `VBPL Legal Research` agent in the Onyx admin UI with the following c
      ```text
      Không tìm thấy căn cứ VBPL đã được xác minh để trả lời câu hỏi này.
      ```
+5. **Grounded-answer contract**:
+   - Search only `vbpl-verified`; do not use a model's background knowledge as legal authority.
+   - For every substantive conclusion, cite the instrument number, provision heading, canonical `vbpl.vn` link, legal-status label, and `status_checked_at`.
+   - Make a current-law conclusion only for a retrieved record whose status is fresh and is `Còn hiệu lực` or `Hết hiệu lực một phần`. For partially effective instruments, state the limitation and cite the exact provision.
+   - Treat stale, suspended, expired, missing, conflicting, or unparsed article-specific evidence as historical/discovery-only. Use the required refusal instead of presenting it as current law.
+   - When following a related-document link, cite both the originating and target provisions; a reference does not establish that its target is currently effective.
+
+Use the same instruction with each enabled cloud or on-premises model. The provider changes synthesis only, never the corpus scope, legal-status gate, or citation requirements.

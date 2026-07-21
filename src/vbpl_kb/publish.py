@@ -8,6 +8,7 @@ from vbpl_kb.references import (
     extract_references,
     resolve_reference,
     append_related_documents_section,
+    extract_structured_references,
     normalize_signature
 )
 
@@ -68,8 +69,10 @@ class Publisher:
                 if path.exists():
                     try:
                         raw_data = json.loads(path.read_text(encoding="utf-8"))["data"]
-                        title = raw_data.get("title", "")
-                        sig_info = _get_doc_sig_from_title(title)
+                        signature_text = raw_data.get("docNum", "")
+                        sig_info = _get_doc_sig_from_title(
+                            f"{raw_data.get('title', '')} {signature_text}"
+                        )
                         if sig_info:
                             dtype, dnum = sig_info
                             sig = normalize_signature(dtype, dnum)
@@ -100,12 +103,13 @@ class Publisher:
             doc = normalize_instrument(raw_data, status_obs, run_id)
             
             # Extract and resolve cross references
-            full_text = raw_data.get("fullText") or ""
-            candidates = extract_references(vbpl_id, "whole", full_text)
-            resolved_edges = []
+            candidates = extract_references(vbpl_id, "whole", doc.content)
+            resolved_edges = extract_structured_references(vbpl_id, raw_data)
             for cand in candidates:
                 edge = resolve_reference(cand, instrument_index)
                 resolved_edges.append(edge)
+            for edge in resolved_edges:
+                self.store.record_reference(run_id, edge)
                 
             # Append resolved references block
             final_content = append_related_documents_section(doc.content, resolved_edges, self.store)

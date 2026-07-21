@@ -58,9 +58,26 @@ class StateStore:
                 CREATE INDEX IF NOT EXISTS idx_status_obs_checked
                 ON status_observations (vbpl_id, checked_at DESC)
             """)
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS crawl_catalog_entries (
+                    run_id TEXT NOT NULL,
+                    vbpl_id TEXT NOT NULL,
+                    catalog_page INTEGER NOT NULL,
+                    PRIMARY KEY (run_id, vbpl_id),
+                    FOREIGN KEY (run_id) REFERENCES crawl_runs(run_id)
+                )
+            """)
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS crawl_checkpoints (
+                    run_id TEXT PRIMARY KEY,
+                    next_catalog_page INTEGER NOT NULL,
+                    FOREIGN KEY (run_id) REFERENCES crawl_runs(run_id)
+                )
+            """)
             # legal_references
             self.conn.execute("""
                 CREATE TABLE IF NOT EXISTS legal_references (
+                    run_id TEXT,
                     from_vbpl_id TEXT NOT NULL,
                     from_provision_key TEXT NOT NULL,
                     to_vbpl_id TEXT,
@@ -69,6 +86,12 @@ class StateStore:
                     source_quote TEXT NOT NULL
                 )
             """)
+            reference_columns = {
+                row["name"]
+                for row in self.conn.execute("PRAGMA table_info(legal_references)")
+            }
+            if "run_id" not in reference_columns:
+                self.conn.execute("ALTER TABLE legal_references ADD COLUMN run_id TEXT")
             self.conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_legal_ref_from
                 ON legal_references (from_vbpl_id, from_provision_key)
@@ -129,6 +152,69 @@ class StateStore:
                 INSERT OR REPLACE INTO status_observations (vbpl_id, eff_status, eff_from, checked_at, content_hash, run_id)
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (obs.vbpl_id, obs.eff_status, obs.eff_from, obs.checked_at.isoformat(), obs.content_hash, obs.run_id))
+
+    def next_catalog_page(self, run_id: str) -> int:
+        row = self.conn.execute(
+            "SELECT next_catalog_page FROM crawl_checkpoints WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+        return int(row["next_catalog_page"]) if row else 1
+
+    def record_catalog_page(self, run_id: str, page_number: int, vbpl_ids: list[str]) -> None:
+        with self.conn:
+            self.conn.executemany(
+                """INSERT OR IGNORE INTO crawl_catalog_entries (run_id, vbpl_id, catalog_page)
+                   VALUES (?, ?, ?)""",
+                [(run_id, vbpl_id, page_number) for vbpl_id in vbpl_ids],
+            )
+            self.conn.execute(
+                """INSERT INTO crawl_checkpoints (run_id, next_catalog_page)
+                   VALUES (?, ?)
+                   ON CONFLICT(run_id) DO UPDATE SET next_catalog_page = excluded.next_catalog_page""",
+                (run_id, page_number + 1),
+            )
+
+    def catalog_ids(self, run_id: str) -> list[str]:
+        rows = self.conn.execute(
+            """SELECT vbpl_id FROM crawl_catalog_entries
+               WHERE run_id = ? ORDER BY catalog_page, vbpl_id""",
+            (run_id,),
+        ).fetchall()
+        return [str(row["vbpl_id"]) for row in rows]
+
+    def record_reference(self, run_id: str, reference) -> None:
+        with self.conn:
+            self.conn.execute(
+                """INSERT INTO legal_references
+                   (run_id, from_vbpl_id, from_provision_key, to_vbpl_id, to_provision_key, relation_type, source_quote)
+                   SELECT ?, ?, ?, ?, ?, ?, ?
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM legal_references
+                       WHERE run_id = ?
+                         AND from_vbpl_id = ?
+                         AND from_provision_key = ?
+                         AND to_vbpl_id IS ?
+                         AND to_provision_key IS ?
+                         AND relation_type = ?
+                         AND source_quote = ?
+                   )""",
+                (
+                    run_id,
+                    reference.from_vbpl_id,
+                    reference.from_provision_key,
+                    reference.to_vbpl_id,
+                    reference.to_provision_key,
+                    reference.relation_type,
+                    reference.source_quote,
+                    run_id,
+                    reference.from_vbpl_id,
+                    reference.from_provision_key,
+                    reference.to_vbpl_id,
+                    reference.to_provision_key,
+                    reference.relation_type,
+                    reference.source_quote,
+                ),
+            )
 
     def latest_status(self, vbpl_id: str) -> StatusObservation | None:
         cursor = self.conn.cursor()

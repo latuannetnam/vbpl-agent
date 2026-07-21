@@ -1,4 +1,5 @@
 import httpx
+from urllib.parse import quote
 from vbpl_kb.config import Settings
 from vbpl_kb.models import OnyxDocument
 
@@ -18,7 +19,9 @@ class OnyxIngestionClient:
         return headers
 
     def healthcheck(self) -> bool:
-        url = f"{self.settings.onyx_base_url}/api/ingestion/health"
+        if not self.settings.onyx_health_path:
+            return False
+        url = f"{self.settings.onyx_base_url.rstrip('/')}{self.settings.onyx_health_path}"
         try:
             response = self.client.get(url, headers=self._headers())
             return response.status_code == 200
@@ -26,7 +29,9 @@ class OnyxIngestionClient:
             return False
 
     def upsert(self, doc: OnyxDocument) -> None:
-        url = f"{self.settings.onyx_base_url}/api/ingestion/document"
+        if not self.settings.onyx_ingestion_upsert_path:
+            raise RuntimeError("Onyx ingestion endpoint is not configured")
+        url = f"{self.settings.onyx_base_url.rstrip('/')}{self.settings.onyx_ingestion_upsert_path}"
         payload = {
             "id": doc.document_id,
             "content": doc.content,
@@ -34,7 +39,7 @@ class OnyxIngestionClient:
             "metadata": doc.metadata
         }
         response = self.client.post(url, json=payload, headers=self._headers())
-        if response.status_code != 200:
+        if not 200 <= response.status_code < 300:
             # Raise non-2xx error without secrets
             raise httpx.HTTPStatusError(
                 f"Onyx upsert failed with status code {response.status_code}",
@@ -43,9 +48,12 @@ class OnyxIngestionClient:
             )
 
     def delete(self, document_id: str) -> None:
-        url = f"{self.settings.onyx_base_url}/api/ingestion/document/{document_id}"
+        if not self.settings.onyx_ingestion_delete_path:
+            raise RuntimeError("Onyx ingestion endpoint is not configured")
+        path = self.settings.onyx_ingestion_delete_path.format(document_id=quote(document_id, safe=""))
+        url = f"{self.settings.onyx_base_url.rstrip('/')}{path}"
         response = self.client.delete(url, headers=self._headers())
-        if response.status_code not in [200, 204, 404]:
+        if not 200 <= response.status_code < 300 and response.status_code != 404:
             raise httpx.HTTPStatusError(
                 f"Onyx delete failed with status code {response.status_code}",
                 request=response.request,

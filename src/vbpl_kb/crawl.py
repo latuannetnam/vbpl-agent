@@ -5,10 +5,11 @@ from vbpl_kb.vbpl_client import VBPLClient
 from vbpl_kb.models import StatusObservation
 
 class CrawlSummary:
-    def __init__(self, detail_count: int, failed_ids: list[str], coverage: float):
+    def __init__(self, detail_count: int, failed_ids: list[str], coverage: float, catalog_complete: bool):
         self.detail_count = detail_count
         self.failed_ids = failed_ids
         self.coverage = coverage
+        self.catalog_complete = catalog_complete
 
 class DailyCrawler:
     def __init__(self, client: VBPLClient, store: StateStore):
@@ -19,26 +20,30 @@ class DailyCrawler:
         run_id = self.store.begin_run(revision)
         
         # Discover catalog IDs page-by-page
-        catalog_ids: list[str] = []
-        page = 1
+        page = self.store.next_catalog_page(run_id)
         page_size = 100
         client_settings = getattr(self.client, "settings", None)
         max_pages = getattr(client_settings, "max_pages", None) if client_settings is not None else None
         
+        catalog_complete = True
         while True:
             if max_pages is not None and page > max_pages:
+                catalog_complete = False
                 break
             try:
                 page_docs = self.client.list_catalog_page(page, page_size)
                 if not page_docs:
                     break
-                for doc in page_docs:
-                    if "id" in doc:
-                        catalog_ids.append(str(doc["id"]))
+                page_ids = [str(doc["id"]) for doc in page_docs if "id" in doc]
+                self.store.record_catalog_page(run_id, page, page_ids)
                 page += 1
             except Exception:
-                # If fetching catalog page fails, we stop discovering but proceed to fetch detail for whatever we have
+                # An unknown tail of the catalog means this run cannot safely replace
+                # a prior corpus, even if every already-discovered detail succeeds.
+                catalog_complete = False
                 break
+
+        catalog_ids = self.store.catalog_ids(run_id)
 
         # Fetch detail for each discovered ID
         detail_count = 0
@@ -76,14 +81,15 @@ class DailyCrawler:
 
         # Calculate coverage
         total = len(catalog_ids)
-        coverage = detail_count / total if total > 0 else 1.0
+        coverage = detail_count / total if total > 0 and catalog_complete else 0.0
         
         # Determine status
-        status = "completed" if len(failed_ids) == 0 else "partial"
+        status = "completed" if catalog_complete and len(failed_ids) == 0 else "partial"
         self.store.finish_run(run_id, status, coverage)
 
         return CrawlSummary(
             detail_count=detail_count,
             failed_ids=failed_ids,
-            coverage=coverage
+            coverage=coverage,
+            catalog_complete=catalog_complete,
         )

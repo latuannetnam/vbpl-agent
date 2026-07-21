@@ -31,3 +31,43 @@ def test_status_exits_two_when_revision_is_stale(runner, stale_store) -> None:
     # Normalize spaces
     clean_stdout = result.stdout.replace(" ", "").replace("\n", "").replace("\r", "")
     assert '"status":"stale"' in clean_stdout
+
+
+def test_status_uses_configured_freshness_window(runner, tmp_path, monkeypatch) -> None:
+    store = StateStore.open(tmp_path / "state.sqlite3")
+    run_id = store.begin_run("run-configured-window")
+    with store.conn:
+        store.conn.execute(
+            "UPDATE crawl_runs SET started_at = ?, finished_at = ? WHERE run_id = ?",
+            (
+                (datetime.now(UTC) - timedelta(hours=2)).isoformat(),
+                (datetime.now(UTC) - timedelta(hours=2)).isoformat(),
+                run_id,
+            ),
+        )
+    store.finish_run(run_id, "completed", 1.0)
+    with store.conn:
+        store.conn.execute(
+            "UPDATE crawl_runs SET finished_at = ? WHERE run_id = ?",
+            ((datetime.now(UTC) - timedelta(hours=2)).isoformat(), run_id),
+        )
+    store.set_active_run(run_id)
+
+    from vbpl_kb.config import Settings
+    monkeypatch.setattr("vbpl_kb.cli.Settings", lambda: Settings(freshness_hours=1))
+    result = runner.invoke(app, ["status", "--db-path", str(store.db_path)])
+
+    assert result.exit_code == 2
+    assert '"status":"stale"' in result.stdout.replace(" ", "").replace("\n", "")
+
+
+def test_evaluate_refuses_to_guess_onyx_query_route(runner, tmp_path, monkeypatch) -> None:
+    benchmark = tmp_path / "benchmark.json"
+    benchmark.write_text("[]", encoding="utf-8")
+
+    from vbpl_kb.config import Settings
+    monkeypatch.setattr("vbpl_kb.cli.Settings", lambda: Settings(onyx_search_path=None))
+    result = runner.invoke(app, ["evaluate", str(benchmark)])
+
+    assert result.exit_code == 1
+    assert "Onyx search endpoint is not configured" in result.stdout

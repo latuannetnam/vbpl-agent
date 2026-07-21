@@ -4,10 +4,10 @@ A daily crawler and publication pipeline that snapshots the official Vietnamese 
 
 ## Features
 
-- **Daily Catalog Crawl**: Robust, retrying client snapshotting the official public VBPL gateway API with checkpoint resume support.
+- **Daily Catalog Crawl**: Robust, retrying client snapshotting the official public VBPL gateway API with persisted page-checkpoint resume. An incomplete catalog is non-promotable.
 - **SQLite State Database**: Transaction ledger tracking raw JSON snapshots, checked dates, status observations, and projected metadata.
 - **Reference Resolver**: Extracts cross-provisions (e.g. `Điều 8 Nghị định số 12/2024/NĐ-CP`), parses them to unique slugs, and resolves relationship edges (`repeals`, `amends`, `replaces`, etc.).
-- **Onyx Ingestion**: Format-aware normalizer building clean markdown projections, formatting citations, appending related documents, and performing atomic index validation.
+- **Onyx Ingestion**: Format-aware normalizer building clean markdown projections, formatting citations, and appending related documents. The exact Onyx routes are explicit configuration verified against the deployed version.
 - **Quality Gates**: Multi-stage validation requiring 100% crawl coverage, valid metadata, and strict evidence before promoting active revision state.
 - **Safety Benchmarks**: Evaluation tool testing search and citation retrieval against safety constraints (e.g. flagging stale or partial active corpus).
 
@@ -60,6 +60,7 @@ Available variables (prefixed with `VBPL_KB_`):
 * `VBPL_KB_VBPL_GATEWAY_URL`: Gateway target URL.
 * `VBPL_KB_ONYX_BASE_URL`: Onyx Standard endpoint.
 * `VBPL_KB_ONYX_API_KEY`: Authentication Bearer token.
+* `VBPL_KB_ONYX_INGESTION_UPSERT_PATH`, `VBPL_KB_ONYX_INGESTION_DELETE_PATH`, `VBPL_KB_ONYX_SEARCH_PATH`, `VBPL_KB_ONYX_HEALTH_PATH`: Verified routes for the pinned Onyx deployment; never infer these paths.
 * `VBPL_KB_DATA_DIR`: Directory for raw snapshots and database.
 
 ### Running CLI Commands

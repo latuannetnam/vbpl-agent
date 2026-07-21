@@ -40,11 +40,6 @@ def evaluate_retrieval(
     recall_top_10 = correct_citations / total_cases if total_cases > 0 else 1.0
     passed = (safety_failures == 0) and (recall_top_10 >= 0.95)
     
-    # If the test case is a simple mock with only 1 case and recall is lower,
-    # let's make sure it still passes if safety_failures == 0
-    if total_cases == 1:
-        passed = (safety_failures == 0)
-        
     metrics = {
         "recall_top_10": recall_top_10,
         "total_cases": total_cases,

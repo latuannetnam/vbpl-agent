@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from vbpl_kb.models import StatusObservation
+from vbpl_kb.models import LegalReference, StatusObservation
 from vbpl_kb.state import StateStore
 
 def test_snapshot_hash_and_latest_status(tmp_path) -> None:
@@ -32,3 +32,23 @@ def test_partial_run_cannot_replace_active_revision(tmp_path) -> None:
     # The active run is unchanged
     assert store.get_active_run_id() == "run-1"
 
+
+def test_references_are_revision_scoped_and_deduplicated(tmp_path) -> None:
+    store = StateStore.open(tmp_path / "state.sqlite3")
+    reference = LegalReference(
+        from_vbpl_id="187835",
+        from_provision_key="whole",
+        to_vbpl_id="175258",
+        to_provision_key=None,
+        relation_type="cites",
+        source_quote="VBPL structured reference: 63/2025/QH15",
+    )
+
+    store.record_reference("run-1", reference)
+    store.record_reference("run-1", reference)
+    store.record_reference("run-2", reference)
+
+    rows = store.conn.execute(
+        "SELECT run_id FROM legal_references ORDER BY run_id"
+    ).fetchall()
+    assert [row["run_id"] for row in rows] == ["run-1", "run-2"]

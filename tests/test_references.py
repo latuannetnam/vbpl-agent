@@ -3,6 +3,7 @@ from datetime import datetime, UTC
 from vbpl_kb.state import StateStore
 from vbpl_kb.models import StatusObservation, LegalReference
 from vbpl_kb.references import extract_references, resolve_reference, append_related_documents_section
+from vbpl_kb.references import extract_structured_references
 
 @pytest.fixture
 def instrument_index():
@@ -57,3 +58,18 @@ def test_related_documents_section_formatting(store) -> None:
     assert "Hết hiệu lực một phần" in updated_content
     assert "cites" in updated_content
 
+
+def test_structured_vbpl_reference_uses_authoritative_target_id() -> None:
+    edges = extract_structured_references(
+        "187835",
+        {
+            "references": [{
+                "targetDocument": {"id": "175258", "docNum": "63/2025/QH15"},
+                "referenceType": 3,
+                "referenceProvisions": None,
+            }]
+        },
+    )
+
+    assert edges[0].to_vbpl_id == "175258"
+    assert edges[0].relation_type == "cites"

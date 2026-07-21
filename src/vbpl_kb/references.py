@@ -124,6 +124,28 @@ def resolve_reference(candidate: RawReferenceCandidate, instrument_index: dict[s
         source_quote=candidate.source_quote
     )
 
+
+def extract_structured_references(from_vbpl_id: str, raw: dict) -> list[LegalReference]:
+    """Use VBPL's explicit target IDs before attempting text-based matching."""
+    edges: list[LegalReference] = []
+    for reference in raw.get("references") or []:
+        target = reference.get("targetDocument") or {}
+        target_id = target.get("id")
+        if target_id is None:
+            continue
+        target_number = target.get("docNum") or str(target_id)
+        edges.append(
+            LegalReference(
+                from_vbpl_id=from_vbpl_id,
+                from_provision_key="whole",
+                to_vbpl_id=str(target_id),
+                to_provision_key=None,
+                relation_type="cites",
+                source_quote=f"VBPL structured reference: {target_number}",
+            )
+        )
+    return edges
+
 def append_related_documents_section(content: str, references: list[LegalReference], store: StateStore) -> str:
     resolved_refs = [r for r in references if r.to_vbpl_id is not None]
     if not resolved_refs:
@@ -150,4 +172,3 @@ def append_related_documents_section(content: str, references: list[LegalReferen
         lines.append(line)
         
     return content + "\n".join(lines)
-

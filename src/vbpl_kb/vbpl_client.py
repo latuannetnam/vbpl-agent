@@ -49,7 +49,13 @@ class VBPLClient:
 
     def list_catalog_page(self, page_number: int, page_size: int) -> list[dict[str, Any]]:
         url = f"{self.settings.vbpl_gateway_url}/doc/all"
-        payload = {"page": page_number, "size": page_size}
+        payload = {
+            "pageNumber": page_number,
+            "pageSize": page_size,
+            "sortDirection": "desc",
+            "sortBy": "viewCount",
+            "sortByViewCount": True,
+        }
         response = self._request_with_retry("POST", url, json=payload)
         try:
             data = response.json()

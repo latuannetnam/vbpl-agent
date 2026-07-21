@@ -7,8 +7,13 @@ class FakeVBPLClient:
     def __init__(self):
         self.catalog_pages = [[]]
         self.fail_detail_ids = set()
+        self.fail_catalog_pages = set()
+        self.catalog_calls = []
 
     def list_catalog_page(self, page_number: int, page_size: int):
+        self.catalog_calls.append(page_number)
+        if page_number in self.fail_catalog_pages:
+            raise RuntimeError(f"catalog page {page_number} failed")
         if page_number <= len(self.catalog_pages):
             return [{"id": int(i)} for i in self.catalog_pages[page_number - 1]]
         return []
@@ -65,3 +70,32 @@ def test_crawl_checkpoint_restart(fake_client, store) -> None:
     assert (summary2.detail_count, summary2.failed_ids) == (2, [])
     assert called_ids == ["2"]
 
+
+def test_catalog_failure_is_partial_and_never_reports_full_coverage(fake_client, store) -> None:
+    def fail_catalog(page_number: int, page_size: int):
+        raise RuntimeError("gateway unavailable")
+
+    fake_client.list_catalog_page = fail_catalog
+
+    summary = DailyCrawler(fake_client, store).run("vbpl-2026-07-22")
+
+    assert summary.coverage == 0.0
+    assert summary.catalog_complete is False
+    assert store.get_run("vbpl-2026-07-22").status == "partial"
+
+
+def test_catalog_checkpoint_resumes_after_the_last_saved_page(fake_client, store) -> None:
+    fake_client.catalog_pages = [["1"], ["2"]]
+    fake_client.fail_catalog_pages = {2}
+
+    first = DailyCrawler(fake_client, store).run("resume-catalog")
+    assert first.catalog_complete is False
+    assert fake_client.catalog_calls == [1, 2]
+
+    fake_client.fail_catalog_pages.clear()
+    fake_client.catalog_calls.clear()
+    second = DailyCrawler(fake_client, store).run("resume-catalog")
+
+    assert second.catalog_complete is True
+    assert second.detail_count == 2
+    assert fake_client.catalog_calls == [2, 3]

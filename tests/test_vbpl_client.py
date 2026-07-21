@@ -58,4 +58,10 @@ def test_list_catalog_page(settings, load_fixture) -> None:
     assert len(docs) == 2
     assert docs[0]["id"] == 123
     assert route.call_count == 1
-    assert json.loads(route.calls[0].request.content) == {"page": 1, "size": 20}
+    assert json.loads(route.calls[0].request.content) == {
+        "pageNumber": 1,
+        "pageSize": 20,
+        "sortDirection": "desc",
+        "sortBy": "viewCount",
+        "sortByViewCount": True,
+    }

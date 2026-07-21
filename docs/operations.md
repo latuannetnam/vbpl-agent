@@ -18,7 +18,7 @@ Inside the virtual environment (via `uv run` or directly):
   ```bash
   vbpl-kb status --db-path data/state.sqlite3
   ```
-  Exits with code `2` if stale (older than 24 hours) or partial.
+  Exits with code `2` if stale (older than `VBPL_KB_FRESHNESS_HOURS`) or partial.
 
 - **Daily Pipeline**: Run discovery, fetching, normalization, reference resolution, and upsertion.
   ```bash
@@ -37,9 +37,11 @@ Inside the virtual environment (via `uv run` or directly):
 
 ## Docker Compose Deployment
 
-Run the daily pipeline container with Docker Compose:
+The Compose file is a one-shot worker. Run it from a host scheduler once per day; it intentionally does not restart continuously:
 ```bash
-docker-compose -f docker-compose.vbpl.yml up -d
+docker compose -f docker-compose.vbpl.yml run --rm vbpl-pipeline
 ```
 
-No public ports are exposed. Data is persisted to the named volume `vbpl-pipeline-data`.
+Before the first run, set `VBPL_KB_ONYX_BASE_URL`, `VBPL_KB_ONYX_API_KEY`, and the pinned Onyx routes (`VBPL_KB_ONYX_INGESTION_UPSERT_PATH`, optional `VBPL_KB_ONYX_INGESTION_DELETE_PATH`, `VBPL_KB_ONYX_SEARCH_PATH`, and optional `VBPL_KB_ONYX_HEALTH_PATH`). Do not guess those routes: verify them with an authenticated probe against the exact deployed Onyx version and retain a redacted response fixture.
+
+No public ports are exposed. Data is persisted to the named volume `vbpl-pipeline-data`. A failed or incomplete catalog run remains non-promotable; the preceding active revision stays in place and becomes stale once it exceeds the configured freshness window.
