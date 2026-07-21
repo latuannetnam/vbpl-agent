@@ -5,6 +5,6 @@ services:
     command: >
       /bin/sh -c "rm -f /etc/nginx/conf.d/default.conf
       && cp -a /nginx-templates/. /etc/nginx/conf.d/
-      && tr -d '\015' < /etc/nginx/conf.d/run-nginx.sh > /tmp/run-nginx.sh
+      && tr -d '\\015' < /etc/nginx/conf.d/run-nginx.sh > /tmp/run-nginx.sh
       && chmod +x /tmp/run-nginx.sh
       && /bin/sh /tmp/run-nginx.sh app.conf.template"

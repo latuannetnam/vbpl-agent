@@ -57,11 +57,12 @@ function Stop-LegacyOnyx {
 
         Write-Host "Stopping legacy Onyx Compose project 'onyx' without removing volumes."
         # Legacy command shape: docker compose --project-name onyx down
+        # Profiled shutdown: docker compose --project-name onyx --profile s3-filestore down
         $composeArguments = @()
         foreach ($composeFile in $composeFiles) {
             $composeArguments += @("-f", $composeFile)
         }
-        & docker compose @composeArguments --project-name onyx down
+        & docker compose @composeArguments --project-name onyx --profile s3-filestore down
         if ($LASTEXITCODE -ne 0) {
             throw "Unable to stop legacy Onyx Compose project 'onyx'."
         }
@@ -84,6 +85,27 @@ function Ensure-OnyxEnvironment {
         $content,
         [System.Text.UTF8Encoding]::new($false)
     )
+}
+
+function Repair-DetachedMinioContainer {
+    param([Parameter(Mandatory)][string]$ProjectName)
+
+    $containerId = (& docker ps -aq --filter "name=^/$ProjectName-minio-1$").Trim()
+    if (-not $containerId) {
+        return
+    }
+
+    $networkMode = (& docker inspect --format "{{.HostConfig.NetworkMode}}" $containerId).Trim()
+    $networks = (& docker inspect --format "{{json .NetworkSettings.Networks}}" $containerId).Trim()
+    if ($networkMode -ne "$ProjectName`_default" -or $networks -ne "{}") {
+        return
+    }
+
+    Write-Host "Removing detached MinIO container from a previous failed startup; named volumes are preserved."
+    & docker rm -f $containerId
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to remove detached MinIO container from the failed Onyx startup."
+    }
 }
 
 function Wait-OnyxHealth {
@@ -149,6 +171,7 @@ if (-not (Test-Path -LiteralPath $overrideSource)) {
 Stop-LegacyOnyx
 Ensure-OnyxEnvironment -EnvironmentPath $environmentPath
 Copy-Item -LiteralPath $overrideSource -Destination $overrideTarget -Force
+Repair-DetachedMinioContainer -ProjectName "vbpl-onyx"
 
 Push-Location $composeDir
 try {
