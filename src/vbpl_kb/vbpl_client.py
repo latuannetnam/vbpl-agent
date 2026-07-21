@@ -35,7 +35,7 @@ class VBPLClient:
                     response.raise_for_status()
                     return response
             except httpx.HTTPError as e:
-                is_retryable = False
+                is_retryable = isinstance(e, httpx.TimeoutException)
                 if isinstance(e, httpx.HTTPStatusError):
                     if e.response.status_code in [429, 500, 502, 503, 504]:
                         is_retryable = True

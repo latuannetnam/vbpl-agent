@@ -40,6 +40,29 @@ def test_client_retries_on_503(settings) -> None:
     assert detail.eff_status == "Còn hiệu lực"
     assert route.call_count == 2
 
+
+@respx.mock
+def test_client_retries_on_read_timeout(settings) -> None:
+    client = VBPLClient(settings)
+    route = respx.get(f"{settings.vbpl_gateway_url}/doc/123")
+    route.side_effect = [
+        httpx.ReadTimeout("The read operation timed out"),
+        httpx.Response(200, json={
+            "data": {
+                "id": 123,
+                "title": "X",
+                "effStatus": {"name": "Còn hiệu lực"},
+                "effFrom": "2024-01-01",
+            }
+        }),
+    ]
+
+    detail = client.get_detail("123")
+
+    assert detail.eff_status == "Còn hiệu lực"
+    assert route.call_count == 2
+
+
 @respx.mock
 def test_client_does_not_retry_on_404(settings) -> None:
     client = VBPLClient(settings)
