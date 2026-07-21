@@ -27,7 +27,7 @@ def crawl(
     client = VBPLClient(settings)
     
     rev = revision or get_default_revision()
-    crawler = DailyCrawler(client, store)
+    crawler = DailyCrawler(client, store, progress=typer.echo)
     typer.echo(f"Starting crawl for revision {rev}...")
     summary = crawler.run(rev)
     typer.echo(f"Crawl finished. Coverage: {summary.coverage:.2f}, Failed IDs: {summary.failed_ids}")
@@ -41,7 +41,7 @@ def publish(
     path = Path(db_path)
     store = StateStore.open(path)
     onyx = OnyxIngestionClient(settings)
-    publisher = Publisher(store, onyx)
+    publisher = Publisher(store, onyx, progress=typer.echo)
     
     try:
         typer.echo(f"Publishing revision {revision} to Onyx...")
@@ -63,12 +63,12 @@ def run_daily(
     onyx = OnyxIngestionClient(settings)
     
     rev = revision or get_default_revision()
-    crawler = DailyCrawler(client, store)
+    crawler = DailyCrawler(client, store, progress=typer.echo)
     typer.echo(f"Running daily crawl for revision {rev}...")
     crawl_summary = crawler.run(rev)
     typer.echo(f"Crawl finished. Coverage: {crawl_summary.coverage:.2f}")
     
-    publisher = Publisher(store, onyx)
+    publisher = Publisher(store, onyx, progress=typer.echo)
     try:
         typer.echo(f"Running daily publish for revision {rev}...")
         pub_summary = publisher.publish(rev)

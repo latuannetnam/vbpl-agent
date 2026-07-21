@@ -1,4 +1,5 @@
 import pytest
+from types import SimpleNamespace
 from datetime import datetime, UTC, timedelta
 from typer.testing import CliRunner
 from vbpl_kb.state import StateStore
@@ -71,3 +72,36 @@ def test_evaluate_refuses_to_guess_onyx_query_route(runner, tmp_path, monkeypatc
 
     assert result.exit_code == 1
     assert "Onyx search endpoint is not configured" in result.stdout
+
+
+def test_run_daily_streams_component_progress(runner, tmp_path, monkeypatch) -> None:
+    class FakeCrawler:
+        def __init__(self, client, store, progress):
+            self.progress = progress
+
+        def run(self, revision):
+            self.progress("crawl: catalog page 1 discovered; documents=1")
+            self.progress("crawl: completed; documents=1/1 (failed=0)")
+            return SimpleNamespace(coverage=1.0)
+
+    class FakePublisher:
+        def __init__(self, store, onyx, progress):
+            self.progress = progress
+
+        def publish(self, revision):
+            self.progress("publish: preparing 1 documents")
+            self.progress("publish: completed; upserted=1 deleted=0")
+            return SimpleNamespace(upserted_count=1, deleted_count=0)
+
+    monkeypatch.setattr("vbpl_kb.cli.Settings", lambda: object())
+    monkeypatch.setattr("vbpl_kb.cli.StateStore.open", lambda path: object())
+    monkeypatch.setattr("vbpl_kb.cli.VBPLClient", lambda settings: object())
+    monkeypatch.setattr("vbpl_kb.cli.OnyxIngestionClient", lambda settings: object())
+    monkeypatch.setattr("vbpl_kb.cli.DailyCrawler", FakeCrawler)
+    monkeypatch.setattr("vbpl_kb.cli.Publisher", FakePublisher)
+
+    result = runner.invoke(app, ["run-daily", "--db-path", str(tmp_path / "state.sqlite3")])
+
+    assert result.exit_code == 0
+    assert "crawl: catalog page 1 discovered; documents=1" in result.output
+    assert "publish: completed; upserted=1 deleted=0" in result.output

@@ -42,6 +42,13 @@ The Compose file is a one-shot worker. Run it from a host scheduler once per day
 docker compose -f docker-compose.vbpl.yml run --rm vbpl-pipeline
 ```
 
+The worker streams human-readable crawl and publish counts to standard output.
+For a detached invocation, follow its output with:
+
+```powershell
+docker compose -f docker-compose.vbpl.yml logs -f vbpl-pipeline
+```
+
 Before the first run, set `VBPL_KB_ONYX_API_KEY`. The checked-in local defaults use the verified Onyx paths: `/onyx-api/ingestion`, `/onyx-api/ingestion/{document_id}`, `/admin/search`, and `/health`.
 
 No public ports are exposed. Data is persisted to the named volume `vbpl-pipeline-data`. A failed or incomplete catalog run remains non-promotable; the preceding active revision stays in place and becomes stale once it exceeds the configured freshness window.
