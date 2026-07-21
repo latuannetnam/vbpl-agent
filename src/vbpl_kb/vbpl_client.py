@@ -60,6 +60,8 @@ class VBPLClient:
             raise VBPLSchemaError("Missing 'data' field in response")
         
         docs = data["data"]
+        if isinstance(docs, dict) and "items" in docs:
+            docs = docs["items"]
         if not isinstance(docs, list):
             raise VBPLSchemaError("'data' field is not a list")
             
