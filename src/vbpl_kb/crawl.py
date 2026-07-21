@@ -85,6 +85,7 @@ class DailyCrawler:
                         vbpl_id,
                         self.client.get_canonical_page(vbpl_id),
                         datetime.now(UTC),
+                        detail.raw_data,
                     )
                     if not resolution.verified:
                         raise ValueError(resolution.reason)

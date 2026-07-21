@@ -2,7 +2,7 @@ import httpx
 import pytest
 import respx
 import json
-from vbpl_kb.vbpl_client import VBPLClient, VBPLSchemaError
+from vbpl_kb.vbpl_client import VBPLClient
 
 @respx.mock
 def test_detail_extracts_status(settings, load_fixture) -> None:
@@ -12,12 +12,14 @@ def test_detail_extracts_status(settings, load_fixture) -> None:
     assert VBPLClient(settings).get_detail("123").eff_status == "Còn hiệu lực"
 
 @respx.mock
-def test_detail_rejects_missing_status(settings) -> None:
+def test_detail_preserves_missing_status_for_canonical_fallback(settings) -> None:
     respx.get(f"{settings.vbpl_gateway_url}/doc/123").mock(
         return_value=httpx.Response(200, json={"data": {"id": 123, "title": "X"}})
     )
-    with pytest.raises(VBPLSchemaError, match="effStatus.name"):
-        VBPLClient(settings).get_detail("123")
+    detail = VBPLClient(settings).get_detail("123")
+
+    assert detail.title == "X"
+    assert detail.eff_status == ""
 
 @respx.mock
 def test_client_retries_on_503(settings) -> None:

@@ -37,3 +37,25 @@ def test_canonical_page_resolves_json_ld_legal_force() -> None:
     assert result.verified is True
     assert result.title == "Quyết định 279"
     assert result.eff_status == "Còn hiệu lực"
+
+
+def test_canonical_page_uses_official_body_heading_when_json_ld_title_is_blank() -> None:
+    result = resolve_canonical_page(
+        "173680",
+        '<script type="application/ld+json">{"@type":"Legislation","name":"","legislationLegalForce":"InForce"}</script>',
+        datetime(2026, 7, 21, tzinfo=UTC),
+        {
+            "documentContent": {
+                "content": """
+                    <p>Số: 13/2024/TT-BXD</p>
+                    <p><strong>THÔNG TƯ</strong></p>
+                    <p><strong>Quy trình, quy định kỹ thuật kiểm kê khí nhà kính</strong></p>
+                    <p><em>Căn cứ Luật Bảo vệ môi trường;</em></p>
+                """,
+            }
+        },
+    )
+
+    assert result.verified is True
+    assert result.title == "Thông tư số 13/2024/TT-BXD: Quy trình, quy định kỹ thuật kiểm kê khí nhà kính"
+    assert result.eff_status == "Còn hiệu lực"
