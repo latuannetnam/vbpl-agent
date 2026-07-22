@@ -101,6 +101,11 @@ Pop-Location
 
 - Custom Onyx connectors (`VBPLExportConnector`) inheriting from `PollConnector` or `LoadConnector` MUST yield **batches of documents (`list[Document]`)** matching `self.batch_size` from `poll_source()` and `load_from_state()`. Yielding single `Document` instances breaks Onyx's batch separator and yields 0 queued batches.
 - Do not filter out documents using `changed_after` in export connectors; active release manifests represent complete promoted snapshots and must yield all documents to Onyx.
+- Custom connector sources (`vbpl_export`) MUST be registered in the web frontend overlay (`infra/onyx/overlay/web/src/lib/`):
+  - `types.ts`: Add `VBPLExport = "vbpl_export"` to `ValidSources` and exclude `ValidSources.VBPLExport` in `ConfigurableSources`.
+  - `sources.ts`: Add `vbpl_export` entry to `SOURCE_METADATA_MAP`.
+  - `credentials.ts`: Add `vbpl_export: null` to `credentialTemplates`.
+- `scripts/bootstrap-onyx.ps1` MUST include `web_server` in `docker compose build` (`build api_server background web_server`) to build the custom web UI image from overlay sources.
 - Enable GPU acceleration for `indexing_model_server` in Compose override files (`infra/onyx/docker-compose.vbpl-connector.yml`):
   ```yaml
   indexing_model_server:
