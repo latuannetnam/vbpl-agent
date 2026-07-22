@@ -56,6 +56,24 @@ class ReleaseExporter:
         cursor.execute("SELECT vbpl_id, relative_path FROM raw_snapshots WHERE run_id = ?", (run_id,))
         snapshots = cursor.fetchall()
 
+        manifest_path = self.export_dir / "releases" / run_id / "manifest.json"
+        if manifest_path.exists():
+            try:
+                existing_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if existing_manifest.get("document_count") == len(snapshots) and len(snapshots) > 0:
+                    print(f"Release candidate {run_id} already exists on disk ({len(snapshots)} documents); skipping re-export.", flush=True)
+                    entries = existing_manifest.get("documents", [])
+                    return ReleaseManifest(
+                        release_id=run_id,
+                        manifest_path=manifest_path,
+                        manifest_sha256=_sha256_file(manifest_path),
+                        document_count=len(entries),
+                        published_at=existing_manifest.get("published_at", ""),
+                        documents=entries,
+                    )
+            except Exception:
+                pass
+
         # Build instrument index efficiently with a single query
         instrument_index: dict[str, str] = {}
         index_cursor = self.store.conn.cursor()
