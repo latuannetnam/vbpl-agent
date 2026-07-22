@@ -12,3 +12,13 @@ services:
       dockerfile: ../../../infra/onyx/Dockerfile.vbpl
     volumes:
       - $VBPL_EXPORT_HOST_PATH:/app/vbpl-export:ro
+
+  indexing_model_server:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
