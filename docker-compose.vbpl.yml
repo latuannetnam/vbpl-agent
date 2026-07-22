@@ -8,6 +8,7 @@ services:
     command: ["run-daily", "--db-path", "/app/data/state.sqlite3"]
     volumes:
       - vbpl-pipeline-data:/app/data
+      - ${VBPL_EXPORT_HOST_PATH:-./data/exports}:/app/data/exports
     environment:
       - VBPL_KB_DATA_DIR=/app/data
       - VBPL_KB_EXPORT_DIR=${VBPL_KB_EXPORT_DIR:-/app/data/exports}
