@@ -10,6 +10,8 @@ from vbpl_kb.vbpl_client import VBPLClient
 from vbpl_kb.crawl import DailyCrawler
 from vbpl_kb.onyx import OnyxIngestionClient
 from vbpl_kb.publish import Publisher, PublishBlocked
+from vbpl_kb.releases import ReleaseExporter, ReleaseBlocked as ReleaseExportBlocked
+from vbpl_kb.connector_control import OnyxConnectorClient, ConnectorControlError
 
 app = typer.Typer()
 
@@ -32,8 +34,10 @@ def crawl(
     summary = crawler.run(rev)
     typer.echo(f"Crawl finished. Coverage: {summary.coverage:.2f}, Failed IDs: {summary.failed_ids}")
 
-@app.command()
-def publish(
+
+
+@app.command(name="publish-legacy", help="[Diagnostic-only] Direct ingestion API publisher for legacy testing.")
+def publish_legacy(
     db_path: str = typer.Option("data/state.sqlite3", "--db-path"),
     revision: str = typer.Option(..., "--revision")
 ) -> None:
@@ -44,12 +48,13 @@ def publish(
     publisher = Publisher(store, onyx, progress=typer.echo)
     
     try:
-        typer.echo(f"Publishing revision {revision} to Onyx...")
+        typer.echo(f"Publishing revision {revision} to Onyx (legacy direct mode)...")
         summary = publisher.publish(revision)
-        typer.echo(f"Publish complete. Upserted: {summary.upserted_count}, Deleted: {summary.deleted_count}")
+        typer.echo(f"Legacy publish complete. Upserted: {summary.upserted_count}, Deleted: {summary.deleted_count}")
     except PublishBlocked as e:
         typer.echo(f"Publish blocked: {e}")
         raise typer.Exit(code=1)
+
 
 @app.command()
 def run_daily(
@@ -60,7 +65,6 @@ def run_daily(
     path = Path(db_path)
     store = StateStore.open(path)
     client = VBPLClient(settings)
-    onyx = OnyxIngestionClient(settings)
     
     rev = revision or get_default_revision()
     crawler = DailyCrawler(client, store, progress=typer.echo)
@@ -68,14 +72,31 @@ def run_daily(
     crawl_summary = crawler.run(rev)
     typer.echo(f"Crawl finished. Coverage: {crawl_summary.coverage:.2f}")
     
-    publisher = Publisher(store, onyx, progress=typer.echo)
+    exporter = ReleaseExporter(store, settings.export_dir)
     try:
-        typer.echo(f"Running daily publish for revision {rev}...")
-        pub_summary = publisher.publish(rev)
-        typer.echo(f"Daily pipeline completed. Upserted: {pub_summary.upserted_count}, Deleted: {pub_summary.deleted_count}")
-    except PublishBlocked as e:
-        typer.echo(f"Daily pipeline blocked on publish step: {e}")
+        typer.echo(f"Writing release candidate for {rev}...")
+        candidate = exporter.write_candidate(rev)
+        typer.echo(f"Promoting release {rev}...")
+        exporter.promote(candidate)
+        typer.echo(f"Export release {rev} promoted successfully.")
+    except ReleaseExportBlocked as e:
+        typer.echo(f"Daily pipeline blocked on release export step: {e}")
         raise typer.Exit(code=1)
+
+    if settings.onyx_connector_id is not None:
+        try:
+            connector_client = OnyxConnectorClient(settings)
+            typer.echo(f"Triggering Onyx connector ID {settings.onyx_connector_id}...")
+            connector_client.trigger(settings.onyx_connector_id)
+            typer.echo("Waiting for Onyx connector indexing...")
+            connector_client.wait_for_indexed(settings.onyx_connector_id, settings.onyx_connector_timeout_seconds)
+            typer.echo("Onyx connector indexing completed.")
+        except ConnectorControlError as e:
+            typer.echo(f"Daily pipeline blocked on connector step: {e}")
+            raise typer.Exit(code=1)
+
+    typer.echo("Daily pipeline completed successfully.")
+
 
 @app.command()
 def status(

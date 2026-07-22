@@ -84,24 +84,29 @@ def test_run_daily_streams_component_progress(runner, tmp_path, monkeypatch) -> 
             self.progress("crawl: completed; documents=1/1 (failed=0)")
             return SimpleNamespace(coverage=1.0)
 
-    class FakePublisher:
-        def __init__(self, store, onyx, progress):
-            self.progress = progress
+    class FakeReleaseExporter:
+        def __init__(self, store, export_dir):
+            pass
 
-        def publish(self, revision):
-            self.progress("publish: preparing 1 documents")
-            self.progress("publish: completed; upserted=1 deleted=0")
-            return SimpleNamespace(upserted_count=1, deleted_count=0)
+        def write_candidate(self, revision):
+            return SimpleNamespace(release_id=revision)
 
-    monkeypatch.setattr("vbpl_kb.cli.Settings", lambda: object())
+        def promote(self, candidate):
+            return SimpleNamespace(release_id=candidate.release_id)
+
+    class FakeSettings:
+        export_dir = tmp_path / "exports"
+        onyx_connector_id = None
+
+    monkeypatch.setattr("vbpl_kb.cli.Settings", lambda: FakeSettings())
     monkeypatch.setattr("vbpl_kb.cli.StateStore.open", lambda path: object())
     monkeypatch.setattr("vbpl_kb.cli.VBPLClient", lambda settings: object())
-    monkeypatch.setattr("vbpl_kb.cli.OnyxIngestionClient", lambda settings: object())
     monkeypatch.setattr("vbpl_kb.cli.DailyCrawler", FakeCrawler)
-    monkeypatch.setattr("vbpl_kb.cli.Publisher", FakePublisher)
+    monkeypatch.setattr("vbpl_kb.cli.ReleaseExporter", FakeReleaseExporter)
 
     result = runner.invoke(app, ["run-daily", "--db-path", str(tmp_path / "state.sqlite3")])
 
     assert result.exit_code == 0
     assert "crawl: catalog page 1 discovered; documents=1" in result.output
-    assert "publish: completed; upserted=1 deleted=0" in result.output
+    assert "Export release" in result.output
+
