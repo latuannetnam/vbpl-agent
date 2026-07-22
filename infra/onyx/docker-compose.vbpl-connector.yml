@@ -22,3 +22,13 @@ services:
               count: all
               capabilities: [gpu]
 
+  inference_model_server:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+

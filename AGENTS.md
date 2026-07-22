@@ -106,9 +106,18 @@ Pop-Location
   - `sources.ts`: Add `vbpl_export` entry to `SOURCE_METADATA_MAP`.
   - `credentials.ts`: Add `vbpl_export: null` to `credentialTemplates`.
 - `scripts/bootstrap-onyx.ps1` MUST include `web_server` in `docker compose build` (`build api_server background web_server`) to build the custom web UI image from overlay sources.
-- Enable GPU acceleration for `indexing_model_server` in Compose override files (`infra/onyx/docker-compose.vbpl-connector.yml`):
+- Enable GPU acceleration for `indexing_model_server` and `inference_model_server` in Compose override files (`infra/onyx/docker-compose.vbpl-connector.yml`):
   ```yaml
   indexing_model_server:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  inference_model_server:
     deploy:
       resources:
         reservations:
