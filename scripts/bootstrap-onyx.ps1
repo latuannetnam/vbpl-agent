@@ -83,6 +83,9 @@ $exportHostPath = if ($env:VBPL_EXPORT_HOST_PATH) {
     Join-Path $projectRoot "data\exports"
 }
 $env:VBPL_EXPORT_HOST_PATH = $exportHostPath
+if (-not (Test-Path -LiteralPath $exportHostPath)) {
+    New-Item -ItemType Directory -Path $exportHostPath -Force | Out-Null
+}
 
 Write-Host "Building vbpl-onyx-backend image..."
 Push-Location $composeDir
