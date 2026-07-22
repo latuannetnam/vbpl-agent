@@ -99,7 +99,7 @@ Pop-Location
 
 ## Operating the ingestion worker
 
-After Python or Dockerfile changes, rebuild before `docker compose run`; `run`
+Always use Docker Compose as the default execution method for daily pipeline sync tasks. Rebuild before `docker compose run`; `run`
 does not rebuild the image automatically:
 
 ```powershell
