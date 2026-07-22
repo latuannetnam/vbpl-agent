@@ -97,7 +97,7 @@ try {
 
     & docker compose --project-name vbpl-onyx `
         -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.vbpl-ui.yml -f docker-compose.vbpl-connector.yml `
-        build api_server background
+        build api_server background web_server
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to build vbpl-onyx-backend image."
     }
