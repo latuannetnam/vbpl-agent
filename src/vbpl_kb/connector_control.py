@@ -98,26 +98,32 @@ class OnyxConnectorClient:
                 raise ConnectorControlError(f"Timed out waiting for connector {connector_id} to finish indexing")
 
             try:
-                response = self._request("GET", path)
+                response = self._request("POST", path, json={})
+                if response.status_code != 200:
+                    response = self._request("GET", path)
+
                 if response.status_code == 200:
                     data = response.json()
-                    # If Onyx returns a list of status objects or a dict
-                    statuses = data if isinstance(data, list) else data.get("statuses", [])
                     in_progress = False
-                    for item in statuses:
-                        if isinstance(item, dict) and item.get("connector_id") == connector_id:
-                            status_str = str(item.get("status", "")).casefold()
-                            if status_str in ("in_progress", "running", "indexing"):
-                                in_progress = True
-                                break
-                            if status_str in ("failed", "error"):
-                                raise ConnectorControlError(f"Connector {connector_id} indexing failed: {item}")
+                    groups = data if isinstance(data, list) else data.get("statuses", [])
+                    for group in groups:
+                        if isinstance(group, dict):
+                            items = group.get("indexing_statuses", [group])
+                            for item in items:
+                                if isinstance(item, dict):
+                                    if item.get("source") == "vbpl_export" or item.get("connector_id") == connector_id:
+                                        if item.get("in_progress") is True:
+                                            in_progress = True
+                                            break
+                                        status_str = str(item.get("last_status") or item.get("status", "")).casefold()
+                                        if status_str in ("in_progress", "running", "indexing"):
+                                            in_progress = True
+                                            break
                     if not in_progress:
                         return
             except Exception as e:
                 if isinstance(e, ConnectorControlError):
                     raise
-                # transient error, retry after sleep
                 pass
 
             time.sleep(2.0)

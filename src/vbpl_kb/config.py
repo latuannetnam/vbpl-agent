@@ -15,8 +15,8 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     export_dir: Path = Path("data/exports")
     onyx_connector_id: int | None = None
-    onyx_connector_run_once_path: str = "/admin/connector/run-once"
-    onyx_connector_status_path: str = "/admin/connector/status"
+    onyx_connector_run_once_path: str = "/manage/admin/connector/run-once"
+    onyx_connector_status_path: str = "/manage/admin/connector/indexing-status"
     onyx_connector_timeout_seconds: float = 7200.0
     freshness_hours: int = 24
     request_timeout_seconds: float = 30.0

@@ -8,7 +8,7 @@ from vbpl_kb.connector_control import OnyxConnectorClient, ConnectorControlError
 
 @respx.mock
 def test_trigger_posts_run_once() -> None:
-    route = respx.post("http://onyx:8080/admin/connector/run-once").mock(
+    route = respx.post("http://onyx:8080/manage/admin/connector/run-once").mock(
         return_value=httpx.Response(200, json={"success": True, "data": 1})
     )
     client = OnyxConnectorClient(Settings(onyx_base_url="http://onyx:8080", onyx_connector_id=7))
@@ -23,7 +23,7 @@ def test_trigger_posts_run_once() -> None:
 
 @respx.mock
 def test_trigger_raises_on_failure() -> None:
-    respx.post("http://onyx:8080/admin/connector/run-once").mock(
+    respx.post("http://onyx:8080/manage/admin/connector/run-once").mock(
         return_value=httpx.Response(500, json={"detail": "Internal server error"})
     )
     client = OnyxConnectorClient(Settings(onyx_base_url="http://onyx:8080", onyx_connector_id=7))
