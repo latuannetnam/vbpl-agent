@@ -54,10 +54,11 @@ class VBPLExportConnector(LoadConnector, PollConnector):
 
         return manifest_path, manifest_data
 
-    def _documents(self, changed_after: datetime | None = None) -> Generator[Document, None, None]:
+    def _documents(self, changed_after: datetime | None = None) -> Generator[list[Document], None, None]:
         manifest_path, manifest_data = self._read_active_manifest()
         manifest_dir = manifest_path.parent
 
+        batch: list[Document] = []
         for doc_entry in manifest_data.get("documents", []):
 
             rel_path = doc_entry.get("relative_path", "")
@@ -88,18 +89,26 @@ class VBPLExportConnector(LoadConnector, PollConnector):
                 except Exception:
                     pass
 
-            yield Document(
-                id=doc_id,
-                sections=[TextSection(text=content)],
-                source=DocumentSource.VBPL_EXPORT,
-                semantic_identifier=title,
-                metadata=metadata,
-                doc_updated_at=doc_updated_at,
-                link=link,
+            batch.append(
+                Document(
+                    id=doc_id,
+                    sections=[TextSection(text=content)],
+                    source=DocumentSource.VBPL_EXPORT,
+                    semantic_identifier=title,
+                    metadata=metadata,
+                    doc_updated_at=doc_updated_at,
+                    link=link,
+                )
             )
+            if len(batch) >= self.batch_size:
+                yield batch
+                batch = []
 
-    def load_from_state(self) -> Generator[Document, None, None]:
+        if batch:
+            yield batch
+
+    def load_from_state(self) -> Generator[list[Document], None, None]:
         yield from self._documents(changed_after=None)
 
-    def poll_source(self, start: float, end: float) -> Generator[Document, None, None]:
+    def poll_source(self, start: float, end: float) -> Generator[list[Document], None, None]:
         yield from self._documents(changed_after=datetime.fromtimestamp(start, UTC))
