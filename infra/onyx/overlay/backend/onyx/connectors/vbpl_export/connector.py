@@ -22,6 +22,9 @@ class VBPLExportConnector(LoadConnector, PollConnector):
         self.export_root = Path(export_root)
         self.batch_size = batch_size
 
+    def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
+        return None
+
     def _read_active_manifest(self) -> tuple[Path, dict[str, Any]]:
         active_pointer = self.export_root / "active-release.json"
         if not active_pointer.exists():
