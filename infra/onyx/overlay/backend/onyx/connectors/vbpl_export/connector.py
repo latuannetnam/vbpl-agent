@@ -59,14 +59,6 @@ class VBPLExportConnector(LoadConnector, PollConnector):
         manifest_dir = manifest_path.parent
 
         for doc_entry in manifest_data.get("documents", []):
-            updated_at_str = doc_entry.get("updated_at")
-            if changed_after and updated_at_str:
-                try:
-                    doc_updated = datetime.fromisoformat(updated_at_str)
-                    if doc_updated <= changed_after:
-                        continue
-                except Exception:
-                    pass
 
             rel_path = doc_entry.get("relative_path", "")
             doc_file = manifest_dir / rel_path
@@ -88,6 +80,7 @@ class VBPLExportConnector(LoadConnector, PollConnector):
             metadata = raw_doc.get("metadata", {})
             title = metadata.get("title", doc_id)
 
+            updated_at_str = doc_entry.get("updated_at")
             doc_updated_at = None
             if updated_at_str:
                 try:
