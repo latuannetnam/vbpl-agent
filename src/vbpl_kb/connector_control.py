@@ -58,7 +58,21 @@ class OnyxConnectorClient:
                 if list_resp.status_code == 200:
                     for item in list_resp.json():
                         if isinstance(item, dict) and item.get("name") == name:
-                            return int(item["id"])
+                            cid = int(item["id"])
+                            cred_ids = item.get("credential_ids", [])
+                            if not cred_ids:
+                                c_resp = self._request("POST", "/manage/credential", json={
+                                    "credential_json": {},
+                                    "admin_public": True,
+                                    "source": "vbpl_export",
+                                })
+                                if c_resp.status_code == 200:
+                                    cred_id = c_resp.json().get("id")
+                                    self._request("PUT", f"/manage/connector/{cid}/credential/{cred_id}", json={
+                                        "name": name,
+                                        "access_type": "public",
+                                    })
+                            return cid
             response.raise_for_status()
             payload = response.json()
             data = payload.get("data")
