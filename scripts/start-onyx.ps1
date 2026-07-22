@@ -194,6 +194,7 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to start Onyx Compose project 'vbpl-onyx'."
     }
+    & docker compose --project-name vbpl-onyx restart nginx 2>$null
 } finally {
     Pop-Location
 }
