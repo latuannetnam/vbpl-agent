@@ -51,7 +51,14 @@ class OnyxConnectorClient:
                 "connector_specific_config": {},
                 "refresh_freq": 86400,
                 "disabled": False,
+                "access_type": "public",
             })
+            if response.status_code in (400, 409) and "already exists" in response.text.casefold():
+                list_resp = self._request("GET", "/manage/admin/connector")
+                if list_resp.status_code == 200:
+                    for item in list_resp.json():
+                        if isinstance(item, dict) and item.get("name") == name:
+                            return int(item["id"])
             response.raise_for_status()
             payload = response.json()
             data = payload.get("data")

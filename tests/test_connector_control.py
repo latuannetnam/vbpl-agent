@@ -46,5 +46,6 @@ def test_create_connector_posts_creation_request() -> None:
         "connector_specific_config": {},
         "refresh_freq": 86400,
         "disabled": False,
+        "access_type": "public",
     }
 
