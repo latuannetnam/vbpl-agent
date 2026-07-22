@@ -1,0 +1,14 @@
+services:
+  api_server:
+    image: vbpl-onyx-backend:latest
+    build:
+      context: ../../backend
+      dockerfile: ../../../infra/onyx/Dockerfile.vbpl
+
+  background:
+    image: vbpl-onyx-backend:latest
+    build:
+      context: ../../backend
+      dockerfile: ../../../infra/onyx/Dockerfile.vbpl
+    volumes:
+      - $VBPL_EXPORT_HOST_PATH:/app/vbpl-export:ro

@@ -149,34 +149,47 @@ if (-not [int]::TryParse($uiPortValue, [ref]$uiPort) -or $uiPort -lt 1 -or $uiPo
 
 $onyxRoot = Join-Path $projectRoot ".onyx\onyx"
 $composeDir = Join-Path $onyxRoot "deployment\docker_compose"
-$overrideSource = Join-Path $projectRoot "infra\onyx\docker-compose.vbpl-ui.yml"
-$overrideTarget = Join-Path $composeDir "docker-compose.vbpl-ui.yml"
+$uiOverrideSource = Join-Path $projectRoot "infra\onyx\docker-compose.vbpl-ui.yml"
+$uiOverrideTarget = Join-Path $composeDir "docker-compose.vbpl-ui.yml"
+$connectorOverrideSource = Join-Path $projectRoot "infra\onyx\docker-compose.vbpl-connector.yml"
+$connectorOverrideTarget = Join-Path $composeDir "docker-compose.vbpl-connector.yml"
 $environmentPath = Join-Path $composeDir ".env"
 
-if (-not (Test-Path -LiteralPath $onyxRoot)) {
-    New-Item -ItemType Directory -Path (Split-Path -Parent $onyxRoot) -Force | Out-Null
-    & git clone --depth 1 https://github.com/onyx-dot-app/onyx.git $onyxRoot
-    if ($LASTEXITCODE -ne 0) {
-        throw "Unable to clone the official Onyx repository."
-    }
+$exportHostPath = if ($env:VBPL_EXPORT_HOST_PATH) {
+    $env:VBPL_EXPORT_HOST_PATH
+} elseif ($projectEnvironment.ContainsKey("VBPL_EXPORT_HOST_PATH")) {
+    $projectEnvironment["VBPL_EXPORT_HOST_PATH"]
+} else {
+    Join-Path $projectRoot "data\exports"
+}
+$env:VBPL_EXPORT_HOST_PATH = $exportHostPath
+
+$bootstrapScript = Join-Path $PSScriptRoot "bootstrap-onyx.ps1"
+& $bootstrapScript
+if ($LASTEXITCODE -ne 0) {
+    throw "Bootstrap failed."
 }
 
 if (-not (Test-Path -LiteralPath $composeDir)) {
     throw "Onyx Compose directory was not found at $composeDir."
 }
-if (-not (Test-Path -LiteralPath $overrideSource)) {
-    throw "Tracked Onyx Compose override was not found at $overrideSource."
+if (-not (Test-Path -LiteralPath $uiOverrideSource)) {
+    throw "Tracked Onyx UI Compose override was not found at $uiOverrideSource."
+}
+if (-not (Test-Path -LiteralPath $connectorOverrideSource)) {
+    throw "Tracked Onyx Connector Compose override was not found at $connectorOverrideSource."
 }
 
 Stop-LegacyOnyx
 Ensure-OnyxEnvironment -EnvironmentPath $environmentPath
-Copy-Item -LiteralPath $overrideSource -Destination $overrideTarget -Force
+Copy-Item -LiteralPath $uiOverrideSource -Destination $uiOverrideTarget -Force
+Copy-Item -LiteralPath $connectorOverrideSource -Destination $connectorOverrideTarget -Force
 Repair-DetachedMinioContainer -ProjectName "vbpl-onyx"
 
 Push-Location $composeDir
 try {
     & docker compose --project-name vbpl-onyx `
-        -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.vbpl-ui.yml `
+        -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.vbpl-ui.yml -f docker-compose.vbpl-connector.yml `
         --profile s3-filestore up -d
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to start Onyx Compose project 'vbpl-onyx'."
@@ -187,3 +200,4 @@ try {
 
 Wait-OnyxHealth -HealthUrl "http://127.0.0.1:8080/health" -TimeoutSeconds $HealthTimeoutSeconds
 Write-Host "Onyx is ready at http://127.0.0.1:$uiPort"
+

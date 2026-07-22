@@ -24,3 +24,11 @@ def test_overlay_connector_implements_vbpl_export() -> None:
     content = connector_file.read_text(encoding="utf-8")
     assert "class VBPLExportConnector" in content
     assert "active-release.json" in content
+
+
+def test_connector_mount_is_read_only_and_background_only() -> None:
+    compose = Path("infra/onyx/docker-compose.vbpl-connector.yml").read_text(encoding="utf-8")
+    assert "background:" in compose
+    assert "VBPL_EXPORT_HOST_PATH:/app/vbpl-export:ro" in compose
+    assert "api_server:" in compose
+

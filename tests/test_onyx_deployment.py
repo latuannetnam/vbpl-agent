@@ -24,7 +24,7 @@ def test_start_script_uses_scoped_legacy_shutdown_and_project_name() -> None:
     assert "--project-name onyx --profile s3-filestore down" in script
     assert "--project-name vbpl-onyx" in script
     assert "--profile s3-filestore up -d" in script
-    assert "git clone --depth 1 https://github.com/onyx-dot-app/onyx.git" in script
+    assert "bootstrap-onyx.ps1" in script
     assert "Repair-DetachedMinioContainer" in script
     assert "docker rm -f $containerId" in script
     assert "Remove-Volume" not in script
@@ -43,5 +43,6 @@ def test_environment_example_exposes_ui_port_and_verified_routes() -> None:
     environment = (ROOT / ".env.example").read_text(encoding="utf-8")
 
     assert "ONYX_WEB_UI_PORT=3001" in environment
-    assert "VBPL_KB_ONYX_INGESTION_UPSERT_PATH=/onyx-api/ingestion" in environment
+    assert "VBPL_KB_ONYX_CONNECTOR_ID=" in environment
     assert "VBPL_KB_ONYX_SEARCH_PATH=/admin/search" in environment
+

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Generator
 
 from onyx.connectors.interfaces import LoadConnector, PollConnector
-from onyx.connectors.models import Document, Section, TextSection, DocumentSource
+from onyx.connectors.models import Document, TextSection, DocumentSource
 from onyx.configs.app_configs import INDEX_BATCH_SIZE
 
 

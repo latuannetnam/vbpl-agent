@@ -146,7 +146,7 @@ def extract_structured_references(from_vbpl_id: str, raw: dict) -> list[LegalRef
         )
     return edges
 
-def append_related_documents_section(content: str, references: list[LegalReference], store: StateStore) -> str:
+def append_related_documents_section(content: str, references: list[LegalReference], store: StateStore | None = None) -> str:
     resolved_refs = [r for r in references if r.to_vbpl_id is not None]
     if not resolved_refs:
         return content
@@ -155,7 +155,7 @@ def append_related_documents_section(content: str, references: list[LegalReferen
     for ref in resolved_refs:
         target_id = ref.to_vbpl_id
         target_status = "Chưa rõ"
-        if target_id:
+        if target_id and store is not None:
             status_obs = store.latest_status(target_id)
             if status_obs:
                 target_status = status_obs.eff_status
