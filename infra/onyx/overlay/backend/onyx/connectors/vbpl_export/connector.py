@@ -89,13 +89,25 @@ class VBPLExportConnector(LoadConnector, PollConnector):
                 except Exception:
                     pass
 
+            sanitized_metadata: dict[str, Any] = {}
+            for k, v in metadata.items():
+                if isinstance(v, str) and (len(k) + len(v) > 240):
+                    sanitized_metadata[k] = v[: 240 - len(k)] + "..."
+                elif isinstance(v, list):
+                    sanitized_metadata[k] = [
+                        item[: 240 - len(k)] + "..." if isinstance(item, str) and (len(k) + len(item) > 240) else item
+                        for item in v
+                    ]
+                else:
+                    sanitized_metadata[k] = v
+
             batch.append(
                 Document(
                     id=doc_id,
                     sections=[TextSection(text=content)],
                     source=DocumentSource.VBPL_EXPORT,
                     semantic_identifier=title,
-                    metadata=metadata,
+                    metadata=sanitized_metadata,
                     doc_updated_at=doc_updated_at,
                     link=link,
                 )
