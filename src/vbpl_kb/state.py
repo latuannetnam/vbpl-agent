@@ -116,6 +116,19 @@ class StateStore:
                     FOREIGN KEY (run_id) REFERENCES crawl_runs(run_id)
                 )
             """)
+            # release_runs
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS release_runs (
+                    run_id TEXT PRIMARY KEY,
+                    status TEXT NOT NULL,
+                    manifest_path TEXT,
+                    manifest_sha256 TEXT,
+                    document_count INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (run_id) REFERENCES crawl_runs(run_id)
+                )
+            """)
+
 
     def begin_run(self, run_id: str) -> str:
         started_at = datetime.now(UTC).isoformat()
@@ -303,3 +316,37 @@ class StateStore:
             started_at=datetime.fromisoformat(row["started_at"]),
             finished_at=datetime.fromisoformat(row["finished_at"]) if row["finished_at"] else None
         )
+
+    def record_release_run(
+        self,
+        run_id: str,
+        status: str,
+        manifest_path: str | None = None,
+        manifest_sha256: str | None = None,
+        document_count: int = 0,
+    ) -> None:
+        updated_at = datetime.now(UTC).isoformat()
+        with self.conn:
+            self.conn.execute(
+                """
+                INSERT INTO release_runs (run_id, status, manifest_path, manifest_sha256, document_count, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_id) DO UPDATE SET
+                    status = excluded.status,
+                    manifest_path = excluded.manifest_path,
+                    manifest_sha256 = excluded.manifest_sha256,
+                    document_count = excluded.document_count,
+                    updated_at = excluded.updated_at
+                """,
+                (run_id, status, manifest_path, manifest_sha256, document_count, updated_at),
+            )
+
+    def get_release_run(self, run_id: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT run_id, status, manifest_path, manifest_sha256, document_count, updated_at FROM release_runs WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return dict(row)
+

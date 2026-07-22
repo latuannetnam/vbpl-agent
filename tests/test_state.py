@@ -52,3 +52,19 @@ def test_references_are_revision_scoped_and_deduplicated(tmp_path) -> None:
         "SELECT run_id FROM legal_references ORDER BY run_id"
     ).fetchall()
     assert [row["run_id"] for row in rows] == ["run-1", "run-2"]
+
+
+def test_release_runs_state(tmp_path) -> None:
+    store = StateStore.open(tmp_path / "state.sqlite3")
+    store.begin_run("run-1")
+    store.record_release_run("run-1", "candidate", "/path/to/manifest.json", "sha123", 10)
+    rel = store.get_release_run("run-1")
+    assert rel is not None
+    assert rel["status"] == "candidate"
+    assert rel["document_count"] == 10
+
+    store.record_release_run("run-1", "active", "/path/to/manifest.json", "sha123", 10)
+    rel2 = store.get_release_run("run-1")
+    assert rel2 is not None
+    assert rel2["status"] == "active"
+
