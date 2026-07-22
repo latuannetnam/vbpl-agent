@@ -56,40 +56,38 @@ class ReleaseExporter:
         cursor.execute("SELECT vbpl_id, relative_path FROM raw_snapshots WHERE run_id = ?", (run_id,))
         snapshots = cursor.fetchall()
 
-        # Build instrument index
+        # Build instrument index efficiently with a single query
         instrument_index: dict[str, str] = {}
         index_cursor = self.store.conn.cursor()
-        index_cursor.execute("SELECT vbpl_id FROM status_observations")
+        index_cursor.execute(
+            "SELECT DISTINCT s.vbpl_id, s.relative_path FROM raw_snapshots s "
+            "JOIN status_observations o ON s.vbpl_id = o.vbpl_id "
+            "WHERE s.endpoint = 'detail'"
+        )
         for row in index_cursor.fetchall():
             vid = row["vbpl_id"]
-            detail_cursor = self.store.conn.cursor()
-            detail_cursor.execute(
-                "SELECT relative_path FROM raw_snapshots WHERE vbpl_id = ? AND endpoint = 'detail' LIMIT 1",
-                (vid,)
-            )
-            detail_snap = detail_cursor.fetchone()
-            if detail_snap:
-                path = self.store.db_path.parent / detail_snap["relative_path"]
-                if path.exists():
-                    try:
-                        raw_data = json.loads(path.read_text(encoding="utf-8"))["data"]
-                        signature_text = raw_data.get("docNum", "")
-                        sig_info = _get_doc_sig_from_title(
-                            f"{raw_data.get('title', '')} {signature_text}"
-                        )
-                        if sig_info:
-                            dtype, dnum = sig_info
-                            sig = normalize_signature(dtype, dnum)
-                            instrument_index[sig] = vid
-                    except Exception:
-                        pass
+            path = self.store.db_path.parent / row["relative_path"]
+            if path.exists():
+                try:
+                    raw_data = json.loads(path.read_text(encoding="utf-8"))["data"]
+                    signature_text = raw_data.get("docNum", "")
+                    sig_info = _get_doc_sig_from_title(
+                        f"{raw_data.get('title', '')} {signature_text}"
+                    )
+                    if sig_info:
+                        dtype, dnum = sig_info
+                        sig = normalize_signature(dtype, dnum)
+                        instrument_index[sig] = vid
+                except Exception:
+                    pass
 
         release_docs_dir = self.export_dir / "releases" / run_id / "documents"
         release_docs_dir.mkdir(parents=True, exist_ok=True)
 
         doc_entries: list[dict[str, Any]] = []
+        total_snaps = len(snapshots)
 
-        for snap in snapshots:
+        for idx, snap in enumerate(snapshots, start=1):
             vbpl_id = snap["vbpl_id"]
             snap_path = self.store.db_path.parent / snap["relative_path"]
             if not snap_path.exists():
@@ -124,15 +122,25 @@ class ReleaseExporter:
 
             filename = _doc_filename(final_doc.document_id)
             doc_path = release_docs_dir / filename
-            _write_json_atomically(doc_path, doc_payload)
+            
+            # Serialize once in memory to compute sha256 without re-reading disk
+            json_text = json.dumps(doc_payload, ensure_ascii=False, indent=2)
+            doc_bytes = json_text.encode("utf-8")
+            doc_sha256 = hashlib.sha256(doc_bytes).hexdigest()
+            
+            temp_path = doc_path.with_suffix(".tmp")
+            temp_path.write_bytes(doc_bytes)
+            temp_path.replace(doc_path)
 
-            doc_sha256 = _sha256_file(doc_path)
             doc_entries.append({
                 "document_id": final_doc.document_id,
                 "relative_path": f"documents/{filename}",
                 "sha256": doc_sha256,
                 "updated_at": status_obs.checked_at.isoformat()
             })
+
+            if idx % 1000 == 0 or idx == total_snaps:
+                print(f"export: written {idx}/{total_snaps} release documents...", flush=True)
 
         published_at = datetime.now(UTC).isoformat()
         manifest_path = self.export_dir / "releases" / run_id / "manifest.json"
