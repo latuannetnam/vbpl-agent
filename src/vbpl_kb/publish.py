@@ -1,9 +1,10 @@
 import json
 import re
 from collections.abc import Callable
+from typing import Any
 from vbpl_kb.state import StateStore
 from vbpl_kb.onyx import OnyxIngestionClient
-from vbpl_kb.models import OnyxDocument
+from vbpl_kb.models import OnyxDocument, LegalReference, StatusObservation
 from vbpl_kb.normalize import normalize_instrument
 from vbpl_kb.references import (
     extract_references,
@@ -21,6 +22,26 @@ class PublishSummary:
         self.upserted_count = upserted_count
         self.deleted_count = deleted_count
         self.run_id = run_id
+
+
+def build_projection(
+    raw: dict[str, Any],
+    status: StatusObservation,
+    revision: str,
+    references: list[LegalReference] | None = None,
+    store: StateStore | None = None,
+) -> OnyxDocument:
+    doc = normalize_instrument(raw, status, revision)
+    if references:
+        content = append_related_documents_section(doc.content, references, store)
+        return OnyxDocument(
+            document_id=doc.document_id,
+            content=content,
+            link=doc.link,
+            metadata=doc.metadata,
+        )
+    return doc
+
 
 
 ProgressReporter = Callable[[str], None]
@@ -126,15 +147,8 @@ class Publisher:
             for edge in resolved_edges:
                 self.store.record_reference(run_id, edge)
                 
-            # Append resolved references block
-            final_content = append_related_documents_section(doc.content, resolved_edges, self.store)
-            
-            final_doc = OnyxDocument(
-                document_id=doc.document_id,
-                content=final_content,
-                link=doc.link,
-                metadata=doc.metadata
-            )
+            final_doc = build_projection(raw_data, status_obs, run_id, resolved_edges, self.store)
+
 
             if self.store.projection_matches(
                 final_doc.document_id,

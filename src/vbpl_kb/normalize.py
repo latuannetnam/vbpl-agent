@@ -71,6 +71,21 @@ def _render_provisions(text: str) -> tuple[str, str]:
     return "\n\n".join(rendered), "parsed"
 
 
+def normalize_legal_status(raw_status: str | None) -> str:
+    value = (raw_status or "").casefold()
+    if "hết hiệu lực một phần" in value:
+        return "partially_repealed"
+    if "còn hiệu lực" in value:
+        return "in_force"
+    if "hết hiệu lực" in value or "bãi bỏ" in value:
+        return "repealed"
+    if "ngưng hiệu lực" in value or "tạm ngừng" in value:
+        return "suspended"
+    if "chưa có hiệu lực" in value:
+        return "not_yet_effective"
+    return "unknown"
+
+
 def normalize_instrument(raw: dict[str, Any], status: StatusObservation, revision: str) -> OnyxDocument:
     vbpl_id = str(raw.get("id") or status.vbpl_id)
     title = raw.get("title") or f"Document {vbpl_id}"
@@ -94,7 +109,11 @@ def normalize_instrument(raw: dict[str, Any], status: StatusObservation, revisio
     
     metadata = {
         "legal_status": status.eff_status,
+        "legal_status_raw": status.eff_status,
+        "legal_status_normalized": normalize_legal_status(status.eff_status),
+        "status_source": getattr(status, "status_source", "api"),
         "status_checked_at": status_checked_at_iso,
+        "verified_at": status_checked_at_iso,
         "effective_from": status.eff_from or "",
         "source_url": canonical_link,
         "corpus_revision": revision,
@@ -113,3 +132,4 @@ def normalize_instrument(raw: dict[str, Any], status: StatusObservation, revisio
         link=canonical_link,
         metadata=metadata
     )
+

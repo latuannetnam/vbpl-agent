@@ -67,3 +67,18 @@ def test_projection_uses_real_vbpl_html_content_and_citable_subheadings(status) 
     assert "#### Điểm a." in doc.content
     assert "Nội dung điểm a." in doc.content
     assert doc.link.endswith("--187835")
+
+
+def test_normalize_instrument_emits_verified_status_and_article_headings() -> None:
+    doc = normalize_instrument(
+        {"id": "123", "title": "Nghị định số 12/2024/NĐ-CP", "fullText": "Điều 1. Nội dung"},
+        StatusObservation(vbpl_id="123", eff_status="Còn hiệu lực", eff_from=None,
+            checked_at=datetime(2026, 7, 22, tzinfo=UTC), content_hash="raw-sha",
+            run_id="vbpl-2026-07-22", status_source="api"),
+        "vbpl-2026-07-22",
+    )
+    assert doc.document_id == "vbpl:123"
+    assert "## Điều 1." in doc.content
+    assert doc.metadata["legal_status_normalized"] == "in_force"
+    assert doc.metadata["verified_at"] == "2026-07-22T00:00:00+00:00"
+

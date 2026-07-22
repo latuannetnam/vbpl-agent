@@ -11,6 +11,7 @@ class StatusObservation(BaseModel):
     checked_at: datetime
     content_hash: str
     run_id: str
+    status_source: str = "api"
 
 class LegalReference(BaseModel):
     model_config = ConfigDict(frozen=True)
