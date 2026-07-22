@@ -1,14 +1,33 @@
 [
   {
+    "id": "in-force-citation",
     "query": "Nghị định số 135/2026/NĐ-CP Điều 8",
     "expected_vbpl_id": "187835",
     "expected_provision_key": "dieu-8",
     "requires_current_status": true
   },
   {
+    "id": "partial-repeal",
     "query": "Luật Tổ chức Chính phủ số 63/2025/QH15 Điều 1",
     "expected_vbpl_id": "175258",
     "expected_provision_key": "dieu-1",
     "requires_current_status": false
+  },
+  {
+    "id": "unknown-status-refusal",
+    "query": "Quy định chưa rõ hiệu lực pháp lý",
+    "expected_vbpl_id": "999999",
+    "expected_provision_key": "dieu-1",
+    "requires_current_status": true,
+    "expected": {
+      "requires_current_law_refusal": true
+    }
+  },
+  {
+    "id": "resolved-cross-reference",
+    "query": "Căn cứ theo Luật Tổ chức Chính phủ",
+    "expected_vbpl_id": "175258",
+    "expected_provision_key": "dieu-1",
+    "requires_current_status": true
   }
 ]

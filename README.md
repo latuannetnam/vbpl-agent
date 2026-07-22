@@ -6,15 +6,10 @@ and Point, extracts and resolves cross-references, and makes a validated legal
 corpus available to **Onyx Community Edition (CE)**.
 
 Release 1 uses stock Onyx Chat UI and a scoped VBPL Legal Agent. It does not use
-the gated standalone Onyx Search Mode UI. The approved target architecture is a
-project-owned Onyx `VBPL Export Connector` that reads validated releases from a
-read-only shared Docker volume. See
+the gated standalone Onyx Search Mode UI. The architecture uses a project-owned
+Onyx `VBPL Export Connector` that reads validated releases from a read-only
+shared Docker volume. See
 [`docs/superpowers/specs/2026-07-22-vbpl-ce-custom-connector-design.md`](docs/superpowers/specs/2026-07-22-vbpl-ce-custom-connector-design.md).
-
-> **Migration status:** the current code still contains a direct Onyx ingestion
-> publisher. It is retained only while the connector migration is implemented;
-> new production behavior must follow the approved connector design rather than
-> extend the direct API path.
 
 ## Features
 
@@ -23,9 +18,8 @@ read-only shared Docker volume. See
 - **Reference Resolver**: Extracts cross-provisions (e.g. `Điều 8 Nghị định số 12/2024/NĐ-CP`), parses them to unique slugs, and resolves relationship edges (`repeals`, `amends`, `replaces`, etc.).
 - **Immutable Legal Releases**: A complete candidate export is checksummed and
   promoted through an atomic active-release pointer only after validation.
-- **Onyx CE Connector (target)**: A custom shared-volume connector performs
-  bootstrap and incremental indexing without the direct per-document ingestion
-  API.
+- **Onyx CE Connector**: A custom shared-volume connector performs bootstrap
+  and incremental indexing without reliance on direct ingestion APIs.
 - **Grounded Legal Agent**: Chat answers cite the official instrument,
   article/section, status, verification date, and canonical VBPL URL. A status
   that is missing, stale, or conflicting cannot support a current-law claim.
@@ -46,14 +40,18 @@ read-only shared Docker volume. See
 │   ├── cli.py                     # Command-line entry points
 │   ├── client.py                  # VBPL official gateway API wrapper
 │   ├── config.py                  # Validated settings using Pydantic Settings
+│   ├── connector_control.py       # Onyx CE connector trigger client
 │   ├── crawl.py                   # Checkpointed daily crawler
 │   ├── evaluate.py                # Retrieval safety evaluation metrics
 │   ├── models.py                  # Pydantic schemas and projection models
 │   ├── normalize.py               # Markdown and provenance normalizer
-│   ├── onyx.py                    # Legacy direct Onyx ingestion API client
-│   ├── publish.py                 # Legacy publisher; replaced by export workflow
+│   ├── publish.py                 # Legal document projection builders
+│   ├── releases.py                # Release exporter and pointer manager
 │   └── state.py                   # SQLite state engine
-├── infra/onyx/                    # Planned pinned Onyx overlay and connector image
+├── infra/onyx/                    # Pinned Onyx overlay, connector patch, and Docker files
+├── scripts/
+│   ├── bootstrap-onyx.ps1         # Pinned Onyx setup and build script
+│   └── start-onyx.ps1             # Local stack lifecycle script
 ├── tests/                         # Full contract, unit, and mock test suite
 ├── docker-compose.vbpl.yml        # Docker Compose runner
 └── pyproject.toml                 # Package and project configurations
@@ -72,7 +70,7 @@ uv sync
 
 ### Environment Configuration
 
-Copy `.env.example` to `.env` and fill in the Onyx API Key:
+Copy `.env.example` to `.env` and configure settings:
 
 ```bash
 cp .env.example .env
@@ -81,22 +79,27 @@ cp .env.example .env
 Available variables (prefixed with `VBPL_KB_`):
 * `VBPL_KB_VBPL_GATEWAY_URL`: Gateway target URL.
 * `VBPL_KB_ONYX_BASE_URL`: Onyx Standard endpoint.
-* `VBPL_KB_ONYX_API_KEY`: Authentication Bearer token for the legacy direct
-  publisher or administrative diagnostics; not a production dependency after
-  the connector migration.
-* `VBPL_KB_ONYX_INGESTION_UPSERT_PATH`, `VBPL_KB_ONYX_INGESTION_DELETE_PATH`, `VBPL_KB_ONYX_SEARCH_PATH`, `VBPL_KB_ONYX_HEALTH_PATH`: Verified routes for the pinned Onyx deployment; never infer these paths.
+* `VBPL_KB_ONYX_API_KEY`: Authentication Bearer token for connector control.
+* `VBPL_KB_ONYX_CONNECTOR_ID`: Pinned Onyx connector ID for `VBPL_EXPORT`.
+* `VBPL_KB_EXPORT_DIR`: Shared export directory mounted into Onyx.
+* `VBPL_KB_ONYX_SEARCH_PATH`, `VBPL_KB_ONYX_HEALTH_PATH`: Verified routes for the pinned Onyx deployment.
 * `VBPL_KB_DATA_DIR`: Directory for raw snapshots and database.
 
-### Running CLI Commands
+### Running Local Onyx & Pipeline
 
-Use the registered script `vbpl-kb`:
+Start Onyx stack:
+
+```powershell
+.\scripts\start-onyx.ps1
+```
+
+Run daily export and connector sync:
 
 ```bash
 # Get help and options list
 uv run vbpl-kb --help
 
-# Current implementation: run daily crawl and direct publish. The approved
-# connector workflow will replace this publication step.
+# Daily crawl, export, and Onyx connector trigger
 uv run vbpl-kb run-daily
 
 # Check the freshness status of the active revision

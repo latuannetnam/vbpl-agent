@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import datetime, UTC
 from typing import Any
 from vbpl_kb.state import StateStore
-from vbpl_kb.models import ReleaseManifest, ActiveRelease, OnyxDocument
+from vbpl_kb.models import ReleaseManifest, ActiveRelease
 from vbpl_kb.publish import build_projection, _get_doc_sig_from_title
 from vbpl_kb.references import (
     extract_references,

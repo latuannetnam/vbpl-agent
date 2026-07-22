@@ -8,3 +8,13 @@ def test_evaluation_rejects_stale_current_law_result() -> None:
     )
     assert report.current_law_safety_failures == 1
     assert report.passed is False
+
+
+def test_current_law_answer_requires_fresh_verified_status() -> None:
+    report = evaluate_retrieval(
+        [{"id": "unknown-status", "query": "Q", "expected_vbpl_id": "123", "expected_provision_key": "Điều 1", "expected": {"requires_current_law_refusal": True}}],
+        lambda _: [{"vbpl_id": "123", "status_fresh": False, "provision_key": "Điều 1"}],
+    )
+    assert report.passed is False
+    assert report.current_law_safety_failures == 1
+

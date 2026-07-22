@@ -107,13 +107,13 @@ docker compose -f docker-compose.vbpl.yml build vbpl-pipeline
 docker compose -f docker-compose.vbpl.yml run --rm vbpl-pipeline
 ```
 
-For direct debugging of the current implementation, use the CLI stages with an
-explicit revision. `publish` is a legacy direct-ingestion path during the
-connector migration; do not extend it as the future production publisher:
+For direct debugging of the implementation, use the CLI commands with an
+explicit revision. `publish-legacy` is a diagnostic direct-ingestion path;
+the standard daily path is `run-daily` using `VBPL Export Connector`:
 
 ```powershell
 uv run vbpl-kb crawl --db-path data/state.sqlite3 --revision vbpl-YYYY-MM-DD
-uv run vbpl-kb publish --db-path data/state.sqlite3 --revision vbpl-YYYY-MM-DD
+uv run vbpl-kb run-daily --db-path data/state.sqlite3
 uv run vbpl-kb status --db-path data/state.sqlite3
 ```
 

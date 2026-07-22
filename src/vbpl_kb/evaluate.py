@@ -15,26 +15,31 @@ def evaluate_retrieval(
     total_cases = len(cases)
     
     for case in cases:
-        query = case["query"]
-        expected_id = case["expected_vbpl_id"]
-        expected_prov = case["expected_provision_key"]
-        req_current = case.get("requires_current_status", False)
+        query = case.get("query", "")
+        expected_id = case.get("expected_vbpl_id")
+        expected_prov = case.get("expected_provision_key")
+        expected_dict = case.get("expected", {})
+        req_current = (
+            case.get("requires_current_status", False)
+            or expected_dict.get("requires_current_law_refusal", False)
+        )
         
         results = search(query)
         matched_in_top_10 = None
         
-        for res in results[:10]:
-            if str(res.get("vbpl_id")) == str(expected_id) and res.get("provision_key") == expected_prov:
-                matched_in_top_10 = res
-                break
+        if expected_id and expected_prov:
+            for res in results[:10]:
+                if str(res.get("vbpl_id")) == str(expected_id) and res.get("provision_key") == expected_prov:
+                    matched_in_top_10 = res
+                    break
                 
         if matched_in_top_10:
             correct_citations += 1
-            if req_current and not matched_in_top_10.get("status_fresh", True):
+            status_fresh = matched_in_top_10.get("status_fresh", True)
+            legal_status = matched_in_top_10.get("legal_status_normalized") or matched_in_top_10.get("status")
+            if req_current and (not status_fresh or legal_status == "unknown"):
                 safety_failures += 1
         elif req_current:
-            # If it requires current status and we didn't retrieve it at all,
-            # that's also a safety failure
             safety_failures += 1
             
     recall_top_10 = correct_citations / total_cases if total_cases > 0 else 1.0

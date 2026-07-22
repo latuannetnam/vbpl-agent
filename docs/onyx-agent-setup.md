@@ -11,9 +11,6 @@ deployment stack.
 - **Corpus Source**: Create exactly one persistent `VBPL Export Connector`
   source that reads the validated active release through its read-only shared
   volume. Attach its successful indexed corpus to a dedicated VBPL document set.
-- **Migration note**: Until the connector is implemented, the current direct
-  publisher may populate the legacy `vbpl-verified` source. Do not add new
-  production configuration that depends on this legacy path.
 
 ## Release 1 UI boundary
 

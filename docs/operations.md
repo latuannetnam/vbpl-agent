@@ -1,13 +1,10 @@
 # VBPL Knowledge Base Pipeline Operations Runbook
 
-This document details the operation of the daily VBPL snapshot crawler and its
-transition to an Onyx CE shared-volume connector.
+This document details the operation of the daily VBPL snapshot crawler and the
+pinned Onyx CE custom export connector.
 
-The authoritative target is
+The authoritative design specification is
 [`2026-07-22-vbpl-ce-custom-connector-design.md`](superpowers/specs/2026-07-22-vbpl-ce-custom-connector-design.md).
-Until that connector is implemented, the existing `publish` and `run-daily`
-commands still use the legacy direct-ingestion client. Do not mistake those
-current commands for the approved production architecture.
 
 ## System Architecture
 
@@ -15,12 +12,9 @@ The pipeline consists of:
 - A Python pipeline worker that queries the official VBPL APIs.
 - SQLite state database (`data/state.sqlite3`) containing catalog metadata, snapshots, observations, and projection state.
 - Local disk store (`data/raw/`) containing raw API snapshots.
-- An immutable candidate/active export release model with checksummed manifests
-  (target implementation).
-- A pinned custom Onyx CE backend image containing the VBPL Export Connector
-  (target implementation).
-- Onyx Standard deployment components, used by CE for connector workers and
-  indexing.
+- Immutable candidate/active export release releases in `data/exports/` with checksummed manifests.
+- A pinned custom Onyx CE backend image (`vbpl-onyx-backend:latest`) containing the `VBPL Export Connector`.
+- Onyx Standard deployment components, used by CE for connector workers and indexing.
 
 ## Running CLI Commands
 
@@ -32,22 +26,20 @@ Inside the virtual environment (via `uv run` or directly):
   ```
   Exits with code `2` if stale (older than `VBPL_KB_FRESHNESS_HOURS`) or partial.
 
-- **Daily Pipeline (current)**: Run discovery, fetching, normalization,
-  reference resolution, and legacy direct upsertion.
+- **Daily Pipeline**: Run discovery, fetching, normalization,
+  reference resolution, candidate export, atomic pointer promotion, and trigger Onyx indexing.
   ```bash
   vbpl-kb run-daily --db-path data/state.sqlite3
   ```
 
 - **Manual Crawl**: Run only the crawler.
   ```bash
-  vbpl-kb crawl --db-path data/state.sqlite3 --revision vbpl-2026-07-21
+  vbpl-kb crawl --db-path data/state.sqlite3 --revision vbpl-2026-07-22
   ```
 
-- **Manual Publish (legacy)**: Directly publish an already completed crawl
-  revision. It is a debugging/transition tool and will be replaced by immutable
-  export generation plus connector triggering.
+- **Diagnostic Direct Ingestion (Legacy)**: Legacy direct ingestion for debugging only.
   ```bash
-  vbpl-kb publish --db-path data/state.sqlite3 --revision vbpl-2026-07-21
+  vbpl-kb publish-legacy --db-path data/state.sqlite3 --revision vbpl-2026-07-22
   ```
 
 ## Docker Compose Deployment
@@ -57,26 +49,23 @@ The Compose file is a one-shot worker. Run it from a host scheduler once per day
 docker compose -f docker-compose.vbpl.yml run --rm vbpl-pipeline
 ```
 
-The worker streams human-readable crawl and publish counts to standard output.
+The worker streams human-readable crawl and export counts to standard output.
 For a detached invocation, follow its output with:
 
 ```powershell
 docker compose -f docker-compose.vbpl.yml logs -f vbpl-pipeline
 ```
 
-Before the first legacy direct-publisher run, set `VBPL_KB_ONYX_API_KEY`. The
-checked-in local defaults use the verified Onyx paths: `/onyx-api/ingestion`,
-`/onyx-api/ingestion/{document_id}`, `/admin/search`, and `/health`. These
-routes are not the future production ingestion interface.
+Set `VBPL_KB_ONYX_API_KEY` and `VBPL_KB_ONYX_CONNECTOR_ID` in `.env`.
 
 No public pipeline ports are exposed. Data is persisted to the named volume
 `vbpl-pipeline-data`. A failed or incomplete catalog run remains
 non-promotable; the preceding active revision stays in place and becomes stale
 once it exceeds the configured freshness window.
 
-## Target connector workflow
+## Production Connector Workflow
 
-After the connector migration, the daily job will:
+The daily job performs:
 
 1. Crawl and resume the official VBPL cache.
 2. Normalize records, verify legal-status evidence, and resolve references.
@@ -88,8 +77,8 @@ After the connector migration, the daily job will:
 6. Persist release coverage, verification counts, connector outcome, and
    failures in SQLite and stdout logs.
 
-The connector reads the active export through a read-only Docker mount. It
-performs full load for bootstrap/recovery and incremental polling for daily
+The connector reads the active export through a read-only Docker mount (`/app/vbpl-export`).
+It performs full load for bootstrap/recovery and incremental polling for daily
 changes. Automatic pruning is intentionally disabled in Release 1: a document
 missing from one catalog crawl must not silently disappear from legal history.
 
@@ -101,40 +90,23 @@ connector recreation.
 
 ## Project-owned local Onyx
 
-Start the current project-owned local Onyx Standard stack from the repository
-root. The script clones the official Onyx source into ignored `.onyx/onyx`,
-stops the known older Compose project named `onyx`, preserves its volumes, and
-starts the replacement as `vbpl-onyx`.
-
-The connector migration changes this to a reproducible derivative build: the
-repository will pin the upstream revision, apply a committed VBPL connector
-overlay, and build the custom API/background image. Never hand-edit the ignored
-checkout. Only the API/background image needs connector code; only the
-background worker receives the read-only VBPL export mount.
+Start the project-owned local Onyx CE stack from the repository root:
 
 ```powershell
 $env:ONYX_WEB_UI_PORT = '3001'
 pwsh -ExecutionPolicy Bypass -File scripts/start-onyx.ps1
 ```
 
-The UI is available only on localhost at `http://127.0.0.1:3001` by default.
-Set `ONYX_WEB_UI_PORT` in the shell or the untracked repository `.env` to bind a
-different localhost port. The API health endpoint is `http://127.0.0.1:8080/health`.
+The startup script calls `scripts/bootstrap-onyx.ps1` to ensure the pinned Onyx revision is checked out, the custom connector patch is applied, overlay files are copied, and `vbpl-onyx-backend:latest` image is built.
 
-On first use of the current direct publisher, complete the basic-auth setup in
-the UI and create an Onyx API key. Store it only in the untracked repository
-`.env`:
+The UI is available on localhost at `http://127.0.0.1:3001` by default.
+The API health endpoint is `http://127.0.0.1:8080/health`.
+
+Store API credentials in the untracked repository `.env`:
 
 ```dotenv
 VBPL_KB_ONYX_API_KEY=replace-with-local-onyx-api-key
-VBPL_KB_ONYX_BASE_URL=http://api_server:8080
-```
-
-The current pipeline Compose service joins the `vbpl-onyx_default` network and
-resolves `api_server` internally. Start Onyx before running the daily worker:
-
-```powershell
-docker compose -f docker-compose.vbpl.yml run --rm vbpl-pipeline
+VBPL_KB_ONYX_CONNECTOR_ID=1
 ```
 
 To stop the project-owned stack without deleting data:
