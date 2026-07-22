@@ -110,7 +110,7 @@ COPY --chown=onyx:onyx ./scripts/supervisord_entrypoint.sh /app/scripts/supervis
 COPY --chown=onyx:onyx ./scripts/reencrypt_secrets.py /app/scripts/reencrypt_secrets.py
 COPY --chown=onyx:onyx ./scripts/rotate_llm_provider_keys.py /app/scripts/rotate_llm_provider_keys.py
 COPY --chown=onyx:onyx ./scripts/seed_dev_license.py /app/scripts/seed_dev_license.py
-RUN chmod +x /app/scripts/supervisord_entrypoint.sh
+RUN sed -i 's/\r$//' /app/scripts/supervisord_entrypoint.sh && chmod +x /app/scripts/supervisord_entrypoint.sh
 
 COPY --chown=onyx:onyx ./assets /app/assets
 
