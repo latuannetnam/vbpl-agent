@@ -1,0 +1,25 @@
+diff --git a/backend/onyx/configs/constants.py b/backend/onyx/configs/constants.py
+index 35a09ce74..b63d6f784 100644
+--- a/backend/onyx/configs/constants.py
++++ b/backend/onyx/configs/constants.py
+@@ -251,6 +251,7 @@ class DocumentSource(str, Enum):
+     LOOPIO = "loopio"
+     BOX = "box"
+     DROPBOX = "dropbox"
++    VBPL_EXPORT = "vbpl_export"
+     SHAREPOINT = "sharepoint"
+     TEAMS = "teams"
+     SALESFORCE = "salesforce"
+diff --git a/backend/onyx/connectors/registry.py b/backend/onyx/connectors/registry.py
+index 004cfbd98..b9e07f9f3 100644
+--- a/backend/onyx/connectors/registry.py
++++ b/backend/onyx/connectors/registry.py
+@@ -233,4 +233,8 @@ CONNECTOR_CLASS_MAP = {
+         module_path="onyx.connectors.mock_connector.connector",
+         class_name="MockConnector",
+     ),
++    DocumentSource.VBPL_EXPORT: ConnectorMapping(
++        module_path="onyx.connectors.vbpl_export.connector",
++        class_name="VBPLExportConnector",
++    ),
+ }
