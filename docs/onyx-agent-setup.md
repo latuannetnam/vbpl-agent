@@ -1,27 +1,32 @@
 # Onyx Agent Configuration Guide
 
-This document describes the configuration requirements for setting up the `VBPL Legal Research` agent in Onyx Standard.
+This document describes the configuration requirements for setting up the
+`VBPL Legal Research` agent in Onyx Community Edition (CE) running the Standard
+deployment stack.
 
 ## Setup Requirements
 
 - **Deployment**: Onyx Standard (Lite is unsupported since it disables indexing and RAG).
-- **Authentication**: Basic Auth with crawler service credentials and pilot users.
-- **Corpus Source**: Create exactly one source named `vbpl-verified` targeting the pipeline index.
+- **Authentication**: Basic Auth with the internal administrator and pilot users.
+- **Corpus Source**: Create exactly one persistent `VBPL Export Connector`
+  source that reads the validated active release through its read-only shared
+  volume. Attach its successful indexed corpus to a dedicated VBPL document set.
+- **Migration note**: Until the connector is implemented, the current direct
+  publisher may populate the legacy `vbpl-verified` source. Do not add new
+  production configuration that depends on this legacy path.
 
-## Search UI Configuration
+## Release 1 UI boundary
 
-Configure the Onyx Search UI to target only the `vbpl-verified` source. Result cards must show:
-- The instrument/provision identifier.
-- The status badge (e.g. `Còn hiệu lực` or `Hết hiệu lực một phần`).
-- Verification time (`status_checked_at`).
-- Canonical `vbpl.vn` link.
-- Excerpts showing the matching provision.
+Release 1 uses stock Onyx CE Chat and the `VBPL Legal Research` agent only.
+Do not configure the standalone Onyx Search Mode/Search-only UI: it is not
+available in the CE-only scope. Users search the legal corpus through the
+agent's Internal Search action and inspect Onyx's normal source/citation panel.
 
 ## Chat UI and Legal Agent Configuration
 
 Create the `VBPL Legal Research` agent in the Onyx admin UI with the following constraints:
 
-1. **Scope**: Scoped exclusively to the `vbpl-verified` document source.
+1. **Scope**: Scope exclusively to the VBPL Export Connector's document set.
 2. **Disabled Features**:
    - **Web Search**: Disabled.
    - **Code Execution**: Disabled.
@@ -37,10 +42,31 @@ Create the `VBPL Legal Research` agent in the Onyx admin UI with the following c
      Không tìm thấy căn cứ VBPL đã được xác minh để trả lời câu hỏi này.
      ```
 5. **Grounded-answer contract**:
-   - Search only `vbpl-verified`; do not use a model's background knowledge as legal authority.
-   - For every substantive conclusion, cite the instrument number, provision heading, canonical `vbpl.vn` link, legal-status label, and `status_checked_at`.
+   - Search only the scoped VBPL document set; do not use a model's background
+     knowledge as legal authority.
+   - For every substantive conclusion, cite the instrument number/title,
+     provision heading, canonical `vbpl.vn` link, legal-status label, and
+     `verified_at`.
    - Make a current-law conclusion only for a retrieved record whose status is fresh and is `Còn hiệu lực` or `Hết hiệu lực một phần`. For partially effective instruments, state the limitation and cite the exact provision.
-   - Treat stale, suspended, expired, missing, conflicting, or unparsed article-specific evidence as historical/discovery-only. Use the required refusal instead of presenting it as current law.
-   - When following a related-document link, cite both the originating and target provisions; a reference does not establish that its target is currently effective.
+   - Treat stale, suspended, expired, missing, conflicting, or unparsed
+     article-specific evidence as historical/discovery-only. Use the required
+     refusal instead of presenting it as current law.
+   - When following a related-document link, cite both the originating and
+     target provisions; a reference does not establish that its target is
+     currently effective.
+
+## Required legal-status behavior
+
+The connector export preserves both the original VBPL status label and a
+normalized status: `in_force`, `partially_repealed`, `repealed`, `expired`,
+`suspended`, `not_yet_effective`, or `unknown`. The agent may make a
+current-law conclusion only when it retrieves fresh, verified official evidence
+for the status. `unknown` remains searchable as historical material but is
+never presented as currently effective.
+
+The agent must distinguish a document's own official status from an outbound
+cross-reference. Relationship types such as amendment, replacement, or repeal
+must come from explicit official source evidence; an ordinary reference is not
+enough to infer legal effect.
 
 Use the same instruction with each enabled cloud or on-premises model. The provider changes synthesis only, never the corpus scope, legal-status gate, or citation requirements.
