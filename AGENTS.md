@@ -97,6 +97,23 @@ docker compose --project-name vbpl-onyx down
 Pop-Location
 ```
 
+## Onyx Custom Connector & GPU Configuration Invariants
+
+- Custom Onyx connectors (`VBPLExportConnector`) inheriting from `PollConnector` or `LoadConnector` MUST yield **batches of documents (`list[Document]`)** matching `self.batch_size` from `poll_source()` and `load_from_state()`. Yielding single `Document` instances breaks Onyx's batch separator and yields 0 queued batches.
+- Do not filter out documents using `changed_after` in export connectors; active release manifests represent complete promoted snapshots and must yield all documents to Onyx.
+- Enable GPU acceleration for `indexing_model_server` in Compose override files (`infra/onyx/docker-compose.vbpl-connector.yml`):
+  ```yaml
+  indexing_model_server:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+  ```
+- Tune `.env` for GPU indexing throughput with `DOC_EMBEDDING_BATCH_SIZE=32` and `CELERY_WORKER_DOCPROCESSING_CONCURRENCY=8`.
+
 ## Operating the ingestion worker
 
 Always use Docker Compose as the default execution method for daily pipeline sync tasks. Rebuild before `docker compose run`; `run`
