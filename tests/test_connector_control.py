@@ -29,3 +29,22 @@ def test_trigger_raises_on_failure() -> None:
     client = OnyxConnectorClient(Settings(onyx_base_url="http://onyx:8080", onyx_connector_id=7))
     with pytest.raises(ConnectorControlError):
         client.trigger(7)
+
+
+@respx.mock
+def test_create_connector_posts_creation_request() -> None:
+    route = respx.post("http://onyx:8080/manage/admin/connector-with-mock-credential").mock(
+        return_value=httpx.Response(200, json={"success": True, "data": 42})
+    )
+    client = OnyxConnectorClient(Settings(onyx_base_url="http://onyx:8080"))
+    cid = client.create_connector("VBPL Export")
+    assert cid == 42
+    assert json.loads(route.calls.last.request.content) == {
+        "name": "VBPL Export",
+        "source": "vbpl_export",
+        "input_type": "poll",
+        "connector_specific_config": {},
+        "refresh_freq": 86400,
+        "disabled": False,
+    }
+

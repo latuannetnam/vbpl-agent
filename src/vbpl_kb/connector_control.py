@@ -42,6 +42,31 @@ class OnyxConnectorClient:
                 raise
             raise ConnectorControlError(f"Failed to trigger connector {connector_id}") from e
 
+    def create_connector(self, name: str = "VBPL Export") -> int:
+        try:
+            response = self._request("POST", "/manage/admin/connector-with-mock-credential", json={
+                "name": name,
+                "source": "vbpl_export",
+                "input_type": "poll",
+                "connector_specific_config": {},
+                "refresh_freq": 86400,
+                "disabled": False,
+            })
+            response.raise_for_status()
+            payload = response.json()
+            data = payload.get("data")
+            if isinstance(data, int):
+                return data
+            if isinstance(data, dict) and "connector_id" in data:
+                return data["connector_id"]
+            if payload.get("success") and isinstance(payload.get("data"), int):
+                return payload["data"]
+            raise ConnectorControlError("Failed to parse created connector ID from Onyx response")
+        except Exception as e:
+            if isinstance(e, ConnectorControlError):
+                raise
+            raise ConnectorControlError("Failed to create connector in Onyx") from e
+
     def wait_for_indexed(self, connector_id: int, timeout_seconds: float | None = None) -> None:
         timeout = timeout_seconds if timeout_seconds is not None else self.settings.onyx_connector_timeout_seconds
         start_time = time.monotonic()

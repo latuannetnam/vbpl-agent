@@ -136,6 +136,23 @@ def status(
         typer.echo(json.dumps({"status": "partial", "run_id": run.run_id, "message": "Active run finished_at is missing"}))
         raise typer.Exit(code=2)
 
+
+@app.command(name="setup-connector")
+def setup_connector(
+    name: str = typer.Option("VBPL Export", help="Connector name")
+) -> None:
+    """Create the VBPL Export connector in Onyx API and output its connector ID."""
+    settings = Settings()
+    client = OnyxConnectorClient(settings)
+    try:
+        connector_id = client.create_connector(name=name)
+        typer.echo(f"Successfully created connector '{name}' in Onyx (connector_id={connector_id}).")
+        typer.echo(f"Set VBPL_KB_ONYX_CONNECTOR_ID={connector_id} in your .env file.")
+    except Exception as e:
+        typer.echo(f"Failed to create connector: {e}", err=True)
+        raise typer.Exit(code=1)
+
+
 @app.command()
 def evaluate(
     benchmark_path: str = typer.Argument(..., help="Path to benchmark JSON file")
