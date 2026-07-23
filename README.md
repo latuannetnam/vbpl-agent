@@ -1,118 +1,65 @@
 # VBPL Legal Knowledge Base Pipeline
 
-A daily crawler and publication pipeline that snapshots the official Vietnamese
-legal databases (VBPL APIs), structures the legal documents by Article, Clause,
-and Point, extracts and resolves cross-references, and makes a validated legal
-corpus available to **Onyx Community Edition (CE)**.
+**Status:** Current
+**Applies to:** Developers and operators starting or maintaining the local VBPL knowledge-base stack.
+**Use for:** Project orientation, prerequisites, current quick-start commands, and documentation discovery.
+**Do not use for:** Detailed architecture contracts, legal-data policy interpretation, incident recovery, or Onyx Legal Agent configuration.
 
-Release 1 uses stock Onyx Chat UI and a scoped VBPL Legal Agent. It does not use
-the gated standalone Onyx Search Mode UI. The architecture uses a project-owned
-Onyx `VBPL Export Connector` that reads validated releases from a read-only
-shared Docker volume. See
-[`docs/superpowers/specs/2026-07-22-vbpl-ce-custom-connector-design.md`](docs/superpowers/specs/2026-07-22-vbpl-ce-custom-connector-design.md).
+This project snapshots official Vietnamese legal databases, validates and
+structures the records, publishes immutable verified releases, and makes them
+searchable through an internal Onyx Community Edition deployment. Official VBPL
+evidence remains authoritative; Onyx provides indexing, retrieval, and chat.
 
-## Features
+## Prerequisites
 
-- **Daily Catalog Crawl**: Robust, retrying client snapshotting the official public VBPL gateway API with persisted page-checkpoint resume. An incomplete catalog is non-promotable.
-- **SQLite State Database**: Transaction ledger tracking raw JSON snapshots, checked dates, status observations, and projected metadata.
-- **Reference Resolver**: Extracts cross-provisions (e.g. `Điều 8 Nghị định số 12/2024/NĐ-CP`), parses them to unique slugs, and resolves relationship edges (`repeals`, `amends`, `replaces`, etc.).
-- **Immutable Legal Releases**: A complete candidate export is checksummed and
-  promoted through an atomic active-release pointer only after validation.
-- **Onyx CE Connector**: A custom shared-volume connector performs bootstrap
-  and incremental indexing without reliance on direct ingestion APIs.
-- **Grounded Legal Agent**: Chat answers cite the official instrument,
-  article/section, status, verification date, and canonical VBPL URL. A status
-  that is missing, stale, or conflicting cannot support a current-law claim.
-- **Quality Gates**: Multi-stage validation requiring 100% crawl coverage, valid metadata, and strict evidence before promoting active revision state.
-- **Safety Benchmarks**: Evaluation tool testing search and citation retrieval against safety constraints (e.g. flagging stale or partial active corpus).
+- Windows PowerShell, Docker Desktop, and `uv`.
+- An untracked `.env` created from `.env.example`.
+- A local Onyx API key and connector ID only when connector-trigger features
+  require them. Never commit or print those values.
 
-## File Structure
+## Quick start
 
-```text
-├── benchmarks/
-│   └── v1.json                    # Reviewed benchmark test cases
-├── docker/
-│   └── Dockerfile.pipeline        # Multi-stage production container
-├── docs/
-│   ├── onyx-agent-setup.md        # Onyx setup runbook and refuse rules
-│   └── operations.md              # Operations runbook for CLI and Docker
-├── src/vbpl_kb/
-│   ├── cli.py                     # Command-line entry points
-│   ├── client.py                  # VBPL official gateway API wrapper
-│   ├── config.py                  # Validated settings using Pydantic Settings
-│   ├── connector_control.py       # Onyx CE connector trigger client
-│   ├── crawl.py                   # Checkpointed daily crawler
-│   ├── evaluate.py                # Retrieval safety evaluation metrics
-│   ├── models.py                  # Pydantic schemas and projection models
-│   ├── normalize.py               # Markdown and provenance normalizer
-│   ├── publish.py                 # Legal document projection builders
-│   ├── releases.py                # Release exporter and pointer manager
-│   └── state.py                   # SQLite state engine
-├── infra/onyx/                    # Pinned Onyx overlay, connector patch, and Docker files
-├── scripts/
-│   ├── bootstrap-onyx.ps1         # Pinned Onyx setup and build script
-│   └── start-onyx.ps1             # Local stack lifecycle script
-├── tests/                         # Full contract, unit, and mock test suite
-├── docker-compose.vbpl.yml        # Docker Compose runner
-└── pyproject.toml                 # Package and project configurations
-```
+Install the locked Python environment:
 
-## Quick Start
-
-### Installation
-
-Ensure you have [uv](https://github.com/astral-sh/uv) installed:
-
-```bash
-# Sync and install the locked package
+```powershell
 uv sync
 ```
 
-### Environment Configuration
-
-Copy `.env.example` to `.env` and configure settings:
-
-```bash
-cp .env.example .env
-```
-
-Available variables (prefixed with `VBPL_KB_`):
-* `VBPL_KB_VBPL_GATEWAY_URL`: Gateway target URL.
-* `VBPL_KB_ONYX_BASE_URL`: Onyx Standard endpoint.
-* `VBPL_KB_ONYX_API_KEY`: Authentication Bearer token for connector control.
-* `VBPL_KB_ONYX_CONNECTOR_ID`: Pinned Onyx connector ID for `VBPL_EXPORT`.
-* `VBPL_KB_EXPORT_DIR`: Shared export directory mounted into Onyx.
-* `VBPL_KB_ONYX_SEARCH_PATH`, `VBPL_KB_ONYX_HEALTH_PATH`: Verified routes for the pinned Onyx deployment.
-* `VBPL_KB_DATA_DIR`: Directory for raw snapshots and database.
-
-### Running Local Onyx & Pipeline
-
-Start Onyx stack:
+Start or update the project-owned Onyx stack:
 
 ```powershell
 .\scripts\start-onyx.ps1
 ```
 
-Run daily export and connector sync:
+Run the daily pipeline, inspect the active revision, and run verification:
 
-```bash
-# Get help and options list
-uv run vbpl-kb --help
-
-# Daily crawl, export, and Onyx connector trigger
-uv run vbpl-kb run-daily
-
-# Check the freshness status of the active revision
-uv run vbpl-kb status
-
-# Run search safety benchmarks
-uv run vbpl-kb evaluate benchmarks/v1.json
+```powershell
+$env:UV_CACHE_DIR="$PWD\.uv-cache"
+uv run vbpl-kb run-daily --db-path data/state.sqlite3
+uv run vbpl-kb status --db-path data/state.sqlite3
+uv run pytest -q
+uv run ruff check .
+uv run mypy src
 ```
 
-### Running Tests
+For the Docker-first daily execution and recovery procedure, use the
+[operations runbook](docs/operations.md).
 
-Run the full suite of unit, contract, and integration tests:
+## Documentation map
 
-```bash
-uv run pytest -v
-```
+- [Coding-agent guide](AGENTS.md) — task routing, safety rules, and
+  verification gate.
+- [Architecture](docs/architecture.md) — boundaries, ownership, code map, and
+  connector contract.
+- [Development workflow](docs/development-workflow.md) — safe change and
+  verification process.
+- [Legal-data policy](docs/legal-data-policy.md) — provenance, status,
+  promotion, and recovery rules.
+- [Operations](docs/operations.md) — Docker lifecycle, daily execution,
+  observability, and recovery.
+- [Onyx agent setup](docs/onyx-agent-setup.md) — administrator configuration of
+  the running legal-research agent.
+
+Date-stamped material under `docs/superpowers/` is historical decision and
+planning context. It is not the operational source of truth; use the current
+documents above for work on this repository.

@@ -25,3 +25,31 @@ def test_current_development_documents_have_authority_blocks(
 
     for field in AUTHORITY_FIELDS:
         assert field in text, f"{relative_path} is missing {field}"
+
+
+ENTRYPOINTS = ("AGENTS.md", "README.md")
+CURRENT_DOCUMENT_LINKS = (
+    "docs/architecture.md",
+    "docs/development-workflow.md",
+    "docs/legal-data-policy.md",
+    "docs/operations.md",
+    "docs/onyx-agent-setup.md",
+)
+
+
+@pytest.mark.parametrize("relative_path", ENTRYPOINTS)
+def test_entrypoints_have_authority_blocks(relative_path: str) -> None:
+    text = (ROOT / relative_path).read_text(encoding="utf-8")
+
+    for field in AUTHORITY_FIELDS:
+        assert field in text, f"{relative_path} is missing {field}"
+
+
+@pytest.mark.parametrize("relative_path", ENTRYPOINTS)
+def test_entrypoints_link_only_to_current_documents(relative_path: str) -> None:
+    text = (ROOT / relative_path).read_text(encoding="utf-8")
+
+    for document in CURRENT_DOCUMENT_LINKS:
+        assert document in text, f"{relative_path} is missing {document}"
+    assert "docs/superpowers/specs/" not in text
+    assert "docs/superpowers/plans/" not in text
