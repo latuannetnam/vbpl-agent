@@ -65,3 +65,38 @@ uv run mypy src
 Historical records in `docs/superpowers/` explain prior decisions but are not
 current implementation instructions. Use them only when a current document
 explicitly names them as background.
+
+## Workspace-Scoped MCP Configuration
+
+When adding workspace-scoped (project-local) MCP servers for Antigravity IDE:
+1. **Plugin Directory Structure**:
+   Create a dedicated plugin folder at `.agents/plugins/<plugin-name>/` containing:
+   - `plugin.json`:
+     ```json
+     { "name": "<plugin-name>" }
+     ```
+   - `mcp_config.json`:
+     ```json
+     {
+       "mcpServers": {
+         "<server-id>": {
+           "serverUrl": "http://127.0.0.1:<port>/",
+           "url": "http://127.0.0.1:<port>/",
+           "headers": {
+             "Authorization": "Bearer <TOKEN>"
+           }
+         }
+       }
+     }
+     ```
+2. **Plugin Registration**:
+   Register the plugin entry in `.agents/plugins.json`:
+   ```json
+   {
+     "entries": [
+       { "path": ".agents/plugins/<plugin-name>" }
+     ]
+   }
+   ```
+3. **Security & Git Invariant**:
+   Never commit API tokens to source control. Always verify `.gitignore` includes `.agents/plugins/` (or token-bearing configuration files).
