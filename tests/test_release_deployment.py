@@ -32,3 +32,12 @@ def test_connector_mount_is_read_only_and_background_only() -> None:
     assert "VBPL_EXPORT_HOST_PATH:/app/vbpl-export:ro" in compose
     assert "api_server:" in compose
 
+
+def test_overlay_mcp_server_utils_configures_increased_client_timeout() -> None:
+    utils_file = Path("infra/onyx/overlay/backend/onyx/mcp_server/utils.py")
+    assert utils_file.exists()
+    content = utils_file.read_text(encoding="utf-8")
+    assert "ONYX_MCP_CLIENT_TIMEOUT" in content
+    assert "300.0" in content
+
+
