@@ -4,6 +4,13 @@ services:
     build:
       context: ../../backend
       dockerfile: ../../../infra/onyx/Dockerfile.vbpl
+    ports:
+      - "8090:8090"
+    command: >
+      /bin/sh -c "alembic upgrade head &&
+      python -m uvicorn onyx.mcp_server.api:mcp_app --host 0.0.0.0 --port 8090 &
+      echo \"Starting Onyx Api Server\" &&
+      uvicorn onyx.main:app --host 0.0.0.0 --port 8080"
 
   background:
     image: vbpl-onyx-backend:latest
