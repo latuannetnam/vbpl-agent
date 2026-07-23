@@ -8,6 +8,8 @@ CURRENT_DEVELOPMENT_DOCS = (
     "docs/architecture.md",
     "docs/development-workflow.md",
     "docs/legal-data-policy.md",
+    "docs/operations.md",
+    "docs/onyx-agent-setup.md",
 )
 AUTHORITY_FIELDS = (
     "**Status:** Current",
@@ -53,3 +55,14 @@ def test_entrypoints_link_only_to_current_documents(relative_path: str) -> None:
         assert document in text, f"{relative_path} is missing {document}"
     assert "docs/superpowers/specs/" not in text
     assert "docs/superpowers/plans/" not in text
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    ("docs/operations.md", "docs/onyx-agent-setup.md"),
+)
+def test_runbooks_do_not_link_to_dated_design_specs(relative_path: str) -> None:
+    text = (ROOT / relative_path).read_text(encoding="utf-8")
+
+    assert "docs/superpowers/specs/" not in text
+    assert "superpowers/specs/" not in text

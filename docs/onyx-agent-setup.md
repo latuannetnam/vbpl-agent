@@ -1,5 +1,10 @@
 # Onyx Agent Configuration Guide
 
+**Status:** Current
+**Applies to:** Onyx administrators configuring the running `VBPL Legal Research` agent and its document-set scope.
+**Use for:** Admin-UI setup, runtime feature restrictions, and grounded-answer configuration.
+**Do not use for:** Repository code changes, connector implementation, or Docker recovery.
+
 This document describes the configuration requirements for setting up the
 `VBPL Legal Research` agent in Onyx Community Edition (CE) running the Standard
 deployment stack.

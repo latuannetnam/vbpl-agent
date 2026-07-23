@@ -1,92 +1,85 @@
-# VBPL Knowledge Base Pipeline Operations Runbook
+# VBPL Knowledge Base Operations Runbook
 
-This document details the operation of the daily VBPL snapshot crawler and the
-pinned Onyx CE custom export connector.
+**Status:** Current
+**Applies to:** Local Docker lifecycle, scheduled daily pipeline runs, observability, and recovery.
+**Use for:** Starting Onyx, running the pipeline, reading outcomes, and recovering safely from failed runs.
+**Do not use for:** Choosing code architecture, changing legal-data policy, or configuring the running Onyx Legal Agent.
 
-The authoritative design specification is
-[`2026-07-22-vbpl-ce-custom-connector-design.md`](superpowers/specs/2026-07-22-vbpl-ce-custom-connector-design.md).
+For component boundaries and connector contracts, read the
+[architecture](architecture.md). For provenance, status, promotion, and
+data-retention rules, read the [legal-data policy](legal-data-policy.md).
 
-## System Architecture
+## Operational boundary
 
-The pipeline consists of:
-- A Python pipeline worker that queries the official VBPL APIs.
-- SQLite state database (`data/state.sqlite3`) containing catalog metadata, snapshots, observations, and projection state.
-- Local disk store (`data/raw/`) containing raw API snapshots.
-- Immutable candidate/active export release releases in `data/exports/` with checksummed manifests.
-- A pinned custom Onyx CE backend image (`vbpl-onyx-backend:latest`) containing the `VBPL Export Connector`.
-- Onyx Standard deployment components, used by CE for connector workers and indexing.
+The pipeline uses persisted SQLite state, retained raw snapshots, immutable
+export releases, and a project-owned Onyx stack. The daily job must leave the
+prior active release and indexed corpus available when source validation or
+connector indexing fails. Architecture details belong in the
+[architecture](architecture.md); this runbook contains the commands and
+recovery actions.
 
-## Running CLI Commands
+## Running CLI commands
 
-Inside the virtual environment (via `uv run` or directly):
+Run commands through `uv run` from the repository root:
 
-- **Status Check**: Check the health and freshness of the active revision.
-  ```bash
-  vbpl-kb status --db-path data/state.sqlite3
-  ```
-  Exits with code `2` if stale (older than `VBPL_KB_FRESHNESS_HOURS`) or partial.
+- **Status check** checks health and freshness of the active revision. It exits
+  with code `2` when the release is stale or partial.
 
-- **Daily Pipeline**: Run discovery, fetching, normalization,
-  reference resolution, candidate export, atomic pointer promotion, and trigger Onyx indexing.
-  ```bash
-  vbpl-kb run-daily --db-path data/state.sqlite3
+  ```powershell
+  uv run vbpl-kb status --db-path data/state.sqlite3
   ```
 
-- **Manual Crawl**: Run only the crawler.
-  ```bash
-  vbpl-kb crawl --db-path data/state.sqlite3 --revision vbpl-2026-07-22
+- **Daily pipeline** discovers, fetches, normalizes, validates, exports, and
+  requests connector indexing.
+
+  ```powershell
+  uv run vbpl-kb run-daily --db-path data/state.sqlite3
   ```
 
-- **Diagnostic Direct Ingestion (Legacy)**: Legacy direct ingestion for debugging only.
-  ```bash
-  vbpl-kb publish-legacy --db-path data/state.sqlite3 --revision vbpl-2026-07-22
+- **Manual crawl** runs only the checkpointed crawler for an explicit revision.
+
+  ```powershell
+  uv run vbpl-kb crawl --db-path data/state.sqlite3 --revision vbpl-2026-07-23
   ```
 
-## Docker Compose Deployment
+- **Diagnostic direct ingestion** is legacy-only and is not the normal daily
+  path.
 
-The Compose file is a one-shot worker. Run it from a host scheduler once per day; it intentionally does not restart continuously:
-```bash
+  ```powershell
+  uv run vbpl-kb publish-legacy --db-path data/state.sqlite3 --revision vbpl-2026-07-23
+  ```
+
+## Docker Compose daily execution
+
+The Compose worker is a one-shot scheduled job. Rebuild before `run`, because
+`docker compose run` does not rebuild the image automatically:
+
+```powershell
+docker compose -f docker-compose.vbpl.yml build vbpl-pipeline
 docker compose -f docker-compose.vbpl.yml run --rm vbpl-pipeline
 ```
 
-The worker streams human-readable crawl and export counts to standard output.
-For a detached invocation, follow its output with:
+The worker streams crawl and export counts to stdout. For a detached invocation,
+inspect its logs with:
 
 ```powershell
 docker compose -f docker-compose.vbpl.yml logs -f vbpl-pipeline
 ```
 
-Set `VBPL_KB_ONYX_API_KEY` and `VBPL_KB_ONYX_CONNECTOR_ID` in `.env`.
+Keep `VBPL_KB_ONYX_API_KEY` and `VBPL_KB_ONYX_CONNECTOR_ID` in the untracked
+`.env` file. Do not print a resolved Compose environment or expose either
+value in logs.
 
-No public pipeline ports are exposed. Data is persisted to the named volume
-`vbpl-pipeline-data`. A failed or incomplete catalog run remains
-non-promotable; the preceding active revision stays in place and becomes stale
-once it exceeds the configured freshness window.
+The pipeline does not expose public ports. Its data persists in the
+`vbpl-pipeline-data` volume.
 
-## Production Connector Workflow
+## Daily outcome and safe failure handling
 
-The daily job performs:
-
-1. Crawl and resume the official VBPL cache.
-2. Normalize records, verify legal-status evidence, and resolve references.
-3. Write a complete immutable candidate export with document and manifest
-   checksums.
-4. Validate the candidate, then atomically replace `active-release.json`.
-5. Trigger the persistent `VBPL Export Connector` and wait for a successful
-   indexing attempt.
-6. Persist release coverage, verification counts, connector outcome, and
-   failures in SQLite and stdout logs.
-
-The connector reads the active export through a read-only Docker mount (`/app/vbpl-export`).
-It performs full load for bootstrap/recovery and incremental polling for daily
-changes. Automatic pruning is intentionally disabled in Release 1: a document
-missing from one catalog crawl must not silently disappear from legal history.
-
-A release with an `unknown` legal status is searchable only as historical
-material. The Legal Agent must not describe it as currently effective. Candidate
-validation failure must not move the active pointer; connector failure preserves
-the last indexed corpus and is retried rather than repaired by automatic
-connector recreation.
+`run-daily` resumes the persisted crawl, validates a candidate release, promotes
+only a complete checksummed export, and requests connector indexing. A blocked
+candidate leaves the active-release pointer unchanged. A connector failure
+preserves the previously indexed corpus; record the failure, correct the cause,
+and retry without deleting state, raw snapshots, volumes, or the connector.
 
 ## Project-owned local Onyx
 
@@ -97,17 +90,10 @@ $env:ONYX_WEB_UI_PORT = '3001'
 pwsh -ExecutionPolicy Bypass -File scripts/start-onyx.ps1
 ```
 
-The startup script calls `scripts/bootstrap-onyx.ps1` to ensure the pinned Onyx revision is checked out, the custom connector patch is applied, overlay files are copied, and `vbpl-onyx-backend:latest` image is built.
-
-The UI is available on localhost at `http://127.0.0.1:3001` by default.
-The API health endpoint is `http://127.0.0.1:8080/health`.
-
-Store API credentials in the untracked repository `.env`:
-
-```dotenv
-VBPL_KB_ONYX_API_KEY=replace-with-local-onyx-api-key
-VBPL_KB_ONYX_CONNECTOR_ID=1
-```
+The startup script calls `scripts/bootstrap-onyx.ps1` to verify the pinned
+upstream revision, apply the committed overlay, and build the custom images.
+The UI is available at `http://127.0.0.1:3001` by default and the local API
+health endpoint is `http://127.0.0.1:8080/health`.
 
 To stop the project-owned stack without deleting data:
 
@@ -120,8 +106,8 @@ Pop-Location
 ## Chat and Legal Agent release surface
 
 Release 1 exposes normal Onyx CE Chat and the scoped VBPL Legal Agent. Do not
-configure or document a standalone Onyx Search Mode UI: it is not available in
-the CE-only scope. The Legal Agent is limited to the VBPL connector/document
-set and Internal Search; web search, code execution, and external write actions
-remain disabled. See [Onyx agent setup](onyx-agent-setup.md) for the required
-grounding and citation instructions.
+configure or document a standalone Search Mode UI. The Legal Agent is limited to
+the VBPL connector/document set and Internal Search; web search, code execution,
+and external write actions remain disabled. Use [Onyx agent
+setup](onyx-agent-setup.md) for required runtime grounding and citation
+configuration.
