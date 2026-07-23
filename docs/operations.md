@@ -103,6 +103,21 @@ docker compose --project-name vbpl-onyx down
 Pop-Location
 ```
 
+### Exposing Onyx UI via Tunnels (Cloudflare & ngrok)
+
+To expose the local Onyx UI for remote access:
+
+- **Cloudflare Tunnel:**
+  ```powershell
+  .\scripts\start-cloudflare-tunnel.ps1
+  ```
+  *If `CLOUDFLARE_TUNNEL_TOKEN` is set in `.env`, token mode is used. Otherwise, it defaults to Quick Tunnel (`trycloudflare.com`).*
+
+- **ngrok Tunnel:**
+  ```powershell
+  .\scripts\start-ngrok.ps1
+  ```
+
 ## Chat and Legal Agent release surface
 
 Release 1 exposes normal Onyx CE Chat and the scoped VBPL Legal Agent. Do not

@@ -31,6 +31,12 @@ Start or update the project-owned Onyx stack:
 .\scripts\start-onyx.ps1
 ```
 
+Optionally expose Onyx via Cloudflare Tunnel:
+
+```powershell
+.\scripts\start-cloudflare-tunnel.ps1
+```
+
 Run the daily pipeline, inspect the active revision, and run verification:
 
 ```powershell
