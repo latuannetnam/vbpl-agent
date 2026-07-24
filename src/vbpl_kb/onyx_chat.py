@@ -79,7 +79,7 @@ class OnyxChatClient:
             url,
             json=payload,
             headers=headers,
-            timeout=self.settings.onyx_request_timeout_seconds,
+            timeout=max(self.settings.onyx_request_timeout_seconds, 600.0),
         )
         response.raise_for_status()
         data = response.json()
