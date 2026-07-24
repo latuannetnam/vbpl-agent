@@ -24,6 +24,7 @@
 - The post-deployment indexed chunk count must not exceed 1.25 times the measured baseline without explicit user approval.
 - Update `AGENTS.md` and current canonical documentation only after implementation behavior is settled. Current docs must not link to this dated plan or its design spec.
 - Direct acceptance uses the ordinary authenticated Onyx Chat API or web UI. It must not call the current MCP server or MCP endpoint.
+- Every direct acceptance request must allow and force Onyx tool `internal_search`, restrict `internal_search_filters.source_type` to `vbpl_export`, and restrict `internal_search_filters.document_set` to the configured VBPL document set. A legally correct answer without recorded Internal Search evidence fails as an LLM-knowledge-only answer.
 
 ---
 
@@ -154,12 +155,33 @@ def test_send_uses_non_streaming_chat_api_and_preserves_sources() -> None:
                 "message_id": 9,
                 "chat_session_id": "00000000-0000-0000-0000-000000000001",
                 "error_msg": None,
-                "tool_calls": [],
+                "tool_calls": [{
+                    "tool_name": "internal_search",
+                    "tool_arguments": {"queries": ["Hỏi Điều 1"]},
+                    "tool_result": "Retrieved 1 VBPL chunk.",
+                    "search_docs": [{
+                        "document_id": "vbpl:178717",
+                        "chunk_ind": 4,
+                        "semantic_identifier": "Luật 87/2025/QH15",
+                        "link": "https://vbpl.vn/van-ban/chi-tiet/--178717",
+                        "blurb": "Vị trí: dieu-1\nĐiều 1. Sửa đổi...",
+                        "source_type": "vbpl_export",
+                        "boost": 1,
+                        "hidden": False,
+                        "metadata": {"article4_order": "2"},
+                        "match_highlights": [],
+                    }],
+                }],
             },
         )
     )
     client = OnyxChatClient(
-        Settings(onyx_base_url="http://onyx:8080", onyx_api_key="secret")
+        Settings(
+            onyx_base_url="http://onyx:8080",
+            onyx_api_key="secret",
+            onyx_internal_search_tool_id=41,
+            onyx_document_set_name="VBPL",
+        )
     )
 
     result = client.send("Hỏi Điều 1", persona_id=7)
@@ -170,11 +192,19 @@ def test_send_uses_non_streaming_chat_api_and_preserves_sources() -> None:
         "chat_session_info": {"persona_id": 7},
         "stream": False,
         "include_citations": True,
+        "allowed_tool_ids": [41],
+        "forced_tool_id": 41,
+        "internal_search_filters": {
+            "source_type": ["vbpl_export"],
+            "document_set": ["VBPL"],
+        },
     }
     assert route.calls.last.request.headers["Authorization"] == "Bearer secret"
     assert result.documents[0].document_id == "vbpl:178717"
     assert result.documents[0].chunk_ind == 4
     assert result.documents[0].provision_key == "dieu-1"
+    assert result.tool_calls[0].tool_name == "internal_search"
+    assert result.tool_calls[0].search_docs[0].source_type == "vbpl_export"
 ```
 
 - [ ] **Step 2: Run the test and verify it fails**
@@ -207,6 +237,7 @@ class RetrievedChunk(BaseModel):
     semantic_identifier: str
     link: str | None
     blurb: str
+    source_type: str
     metadata: dict[str, str | list[str]]
 
     @property
@@ -218,11 +249,19 @@ class RetrievedChunk(BaseModel):
         return legacy if isinstance(legacy, str) else ""
 
 
+class ToolCallEvidence(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    tool_name: str
+    tool_arguments: dict[str, Any]
+    search_docs: tuple[RetrievedChunk, ...]
+
+
 class ChatResult(BaseModel):
     model_config = ConfigDict(frozen=True)
     answer: str
     chat_session_id: str
     documents: tuple[RetrievedChunk, ...]
+    tool_calls: tuple[ToolCallEvidence, ...] = ()
     raw_response: dict[str, Any]
 
 
@@ -240,6 +279,12 @@ class OnyxChatClient:
             "message": message,
             "stream": False,
             "include_citations": True,
+            "allowed_tool_ids": [self.settings.onyx_internal_search_tool_id],
+            "forced_tool_id": self.settings.onyx_internal_search_tool_id,
+            "internal_search_filters": {
+                "source_type": ["vbpl_export"],
+                "document_set": [self.settings.onyx_document_set_name],
+            },
         }
         if chat_session_id is None:
             payload["chat_session_info"] = {"persona_id": persona_id}
@@ -273,6 +318,17 @@ class OnyxChatClient:
                 RetrievedChunk.model_validate(item)
                 for item in data.get("top_documents", [])
             ),
+            tool_calls=tuple(
+                ToolCallEvidence(
+                    tool_name=str(item.get("tool_name", "")),
+                    tool_arguments=dict(item.get("tool_arguments", {})),
+                    search_docs=tuple(
+                        RetrievedChunk.model_validate(document)
+                        for document in (item.get("search_docs") or [])
+                    ),
+                )
+                for item in data.get("tool_calls", [])
+            ),
             raw_response=data,
         )
 ```
@@ -283,6 +339,8 @@ Add these settings:
 onyx_chat_path: str = "/chat/send-chat-message"
 onyx_persona_id: int | None = None
 onyx_model_name: str = ""
+onyx_internal_search_tool_id: int | None = None
+onyx_document_set_name: str = ""
 evaluation_dir: Path = Path("data/evaluations")
 ```
 
@@ -290,19 +348,33 @@ evaluation_dir: Path = Path("data/evaluations")
 
 ```python
 def test_acceptance_reuses_session_and_records_retrieved_chunks(tmp_path) -> None:
+    retrieved = RetrievedChunk(
+        document_id="vbpl:178717",
+        chunk_ind=12,
+        semantic_identifier="Luật 87/2025/QH15",
+        link="https://vbpl.vn/van-ban/chi-tiet/--178717",
+        blurb="Vị trí: dieu-3\nĐiều 3. Điều khoản chuyển tiếp",
+        source_type="vbpl_export",
+        metadata={"article4_order": "2"},
+    )
+    search_call = ToolCallEvidence(
+        tool_name="internal_search",
+        tool_arguments={"queries": ["Văn bản huyện còn hiệu lực không?"]},
+        search_docs=(retrieved,),
+    )
     chat = FakeChatClient([
-        ChatResult(answer="Bạn hỏi tháng 7/2026.", chat_session_id="session-1", documents=(), raw_response={}),
+        ChatResult(
+            answer="Bạn hỏi tháng 7/2026.",
+            chat_session_id="session-1",
+            documents=(retrieved,),
+            tool_calls=(search_call,),
+            raw_response={},
+        ),
         ChatResult(
             answer="Văn bản huyện còn trong thời kỳ chuyển tiếp.",
             chat_session_id="session-1",
-            documents=(RetrievedChunk(
-                document_id="vbpl:178717",
-                chunk_ind=12,
-                semantic_identifier="Luật 87/2025/QH15",
-                link="https://vbpl.vn/van-ban/chi-tiet/--178717",
-                blurb="Vị trí: dieu-3\nĐiều 3. Điều khoản chuyển tiếp",
-                metadata={"article4_order": "2"},
-            ),),
+            documents=(retrieved,),
+            tool_calls=(search_call,),
             raw_response={},
         ),
     ])
@@ -329,15 +401,47 @@ def test_acceptance_reuses_session_and_records_retrieved_chunks(tmp_path) -> Non
     assert report.context.prompt_sha256 == "a" * 64
 ```
 
+Also write two fail-closed tests:
+
+```python
+def test_acceptance_rejects_answer_without_internal_search_evidence() -> None:
+    result = ChatResult(
+        answer="Điều 1 áp dụng.",
+        chat_session_id="session-1",
+        documents=(),
+        tool_calls=(),
+        raw_response={},
+    )
+
+    report = run_single_result_acceptance(result)
+
+    assert report.passed is False
+    assert "internal_search" in report.failures[0]
+
+
+def test_acceptance_rejects_internal_search_from_non_vbpl_source() -> None:
+    result = chat_result_with_search_source("web")
+
+    report = run_single_result_acceptance(result)
+
+    assert report.passed is False
+    assert "vbpl_export" in report.failures[0]
+```
+
+`run_single_result_acceptance` and `chat_result_with_search_source` are focused test helpers in `tests/test_acceptance.py`; the second helper returns a matching answer whose `internal_search.search_docs` contains a non-`vbpl_export` source. These tests prove that answer text alone cannot pass.
+
 - [ ] **Step 5: Implement acceptance models, JSON output, and the CLI command**
 
 Implement immutable Pydantic models. `run_acceptance` must:
 
 1. reuse the returned session ID for later messages in the same case;
-2. retain query, answer, document ID, chunk index, blurb, metadata, and official link;
-3. calculate structural pass/fail from expected/excluded IDs and provision keys;
-4. record model name, persona ID, prompt SHA-256, release ID, connector status, and UTC timestamp;
-5. never record request headers or secrets.
+2. retain query, answer, document ID, chunk index, blurb, metadata, official link, source type, tool name, tool arguments, and tool-returned search documents;
+3. fail unless every response records an `internal_search` call with at least one returned document;
+4. fail when any response records a tool call whose name is not exactly `internal_search`;
+5. fail when any accepted top document or tool-returned search document has a source type other than `vbpl_export` or an ID that does not start with `vbpl:`;
+6. calculate the remaining structural pass/fail checks from expected/excluded IDs and provision keys;
+7. record model name, persona ID, prompt SHA-256, release ID, connector status, Internal Search tool ID, VBPL document-set name, and UTC timestamp;
+8. never record request headers or secrets.
 
 The command contract is:
 
@@ -355,7 +459,7 @@ def onyx_acceptance(
     ...
 ```
 
-It must fail before making a request when `onyx_persona_id`, `onyx_model_name`, `onyx_connector_id`, or a readable active release is absent.
+It must fail before making a request when `onyx_persona_id`, `onyx_model_name`, `onyx_connector_id`, `onyx_internal_search_tool_id`, `onyx_document_set_name`, or a readable active release is absent. The configured tool ID must resolve to Onyx tool name `internal_search`, and the configured document set must contain the existing `vbpl_export` connector before any benchmark request is sent.
 
 - [ ] **Step 6: Add the initial checked-in case set**
 
@@ -1386,6 +1490,8 @@ git commit -m "test: gate hierarchy-aware authority bundles"
 def test_canonical_agent_instruction_requires_staged_authority_bundle_search() -> None:
     text = (ROOT / "docs/onyx-agent-instruction.md").read_text(encoding="utf-8")
     required = (
+        "internal_search",
+        "vbpl_export",
         "24 giờ",
         "xác định tọa độ pháp lý",
         "truy xuất quy định điều chỉnh trực tiếp",
@@ -1424,7 +1530,7 @@ Expected: FAIL because the current prompt still contains the simplified four-lev
 
 The prompt must direct the agent to:
 
-1. use only the assigned VBPL document set and Internal Search;
+1. call Onyx `internal_search` for every legal retrieval, use only the assigned VBPL document set backed by `vbpl_export`, and never answer a legal question from model knowledge alone;
 2. infer subject, conduct, requested consequence, event time, jurisdiction, and current/historical intent from the request and conversation;
 3. ask one focused question only when a missing fact could materially change the result;
 4. retrieve the controlling provision first;
@@ -1448,7 +1554,7 @@ The prompt must direct the agent to:
 - `docs/architecture.md`: schema-v2 projection, authority/applicability modules, verified graph, v1/v2 connector, stock Onyx staged retrieval.
 - `docs/legal-data-policy.md`: code 3/10 evidence mapping, unknown-code policy, text-candidate restriction, 24-hour/current-law and transition rules.
 - `docs/operations.md`: baseline, candidate validation, connector rebuild before promotion, full re-index, direct Chat acceptance, exact rollback, prohibited deletion.
-- `docs/onyx-agent-setup.md`: copy only `docs/onyx-agent-instruction.md`, assign the VBPL document set and Internal Search, record persona/model IDs, apply/restore prompt through Onyx administration.
+- `docs/onyx-agent-setup.md`: copy only `docs/onyx-agent-instruction.md`, assign only Internal Search and the VBPL document set backed by `vbpl_export`, record persona/model/Internal Search tool/document-set IDs, and apply/restore the prompt through Onyx administration.
 - `README.md`: concise current workflow and links to the canonical docs.
 - `AGENTS.md`: route hierarchy/applicability/relation/projection changes to architecture, legal policy, development workflow, and focused tests; do not embed runtime instructions.
 
@@ -1542,10 +1648,12 @@ Expected: pointer replacement is atomic; the existing connector finishes success
 
 In the existing VBPL Legal Agent:
 
-1. keep the same persona/agent identity, model, parameters, tools, and document set;
+1. keep the same persona/agent identity, model, and model parameters;
 2. replace only the instruction with the complete contents of `docs/onyx-agent-instruction.md`;
-3. ensure Internal Search is enabled and Web Search/MCP are not used;
-4. save and reopen the agent to confirm the stored instruction.
+3. ensure the only allowed retrieval tool is Onyx `internal_search`; Web Search, MCP, and other retrieval tools must not be used;
+4. ensure the assigned document set is the VBPL document set backed by the existing `vbpl_export` connector;
+5. record the exact Internal Search tool ID and VBPL document-set name in local configuration for the acceptance harness;
+6. save and reopen the agent to confirm the stored instruction, tool, and document-set assignments.
 
 - [ ] **Step 7: Run the direct non-MCP post-deployment acceptance**
 
@@ -1553,7 +1661,16 @@ In the existing VBPL Legal Agent:
 uv run vbpl-kb onyx-acceptance benchmarks/hierarchy-v1.json --label post-deploy --output data/evaluations/hierarchy-post-deploy.json
 ```
 
-Expected: the command uses `/chat/send-chat-message`, not `/mcp`; all automated gates pass. Manually inspect and add findings for:
+Expected: the command uses `/chat/send-chat-message`, not `/mcp`; all automated gates pass. The automated acceptance must verify:
+
+- every Chat request sets `allowed_tool_ids` to a one-item list containing the configured Internal Search tool ID, sets `forced_tool_id` to that same ID, and restricts `internal_search_filters` to `source_type=["vbpl_export"]` plus the configured VBPL document set;
+- every answer records at least one `tool_calls` entry whose `tool_name` is exactly `internal_search`;
+- every `internal_search` call returns a non-empty `search_docs` list;
+- every accepted `search_docs` and `top_documents` item has `source_type="vbpl_export"` and a `document_id` beginning with `vbpl:`;
+- no Web Search, MCP, or other search tool appears in the request or response evidence;
+- a legally correct answer with missing Internal Search evidence, empty search results, or a non-`vbpl_export` source is marked **FAIL** as an LLM-knowledge-only or wrong-source answer;
+
+Only after these mechanical tool/source gates pass, manually inspect and add findings for:
 
 - controlling and supporting instruments;
 - Article 4 ordering after applicability filtering;
@@ -1599,15 +1716,15 @@ Expected: all automated verification passes; only intentionally ignored runtime 
 
 ### Spec coverage
 
-- Baseline and direct non-MCP Chat evidence: Tasks 1 and 9.
+- Baseline and direct non-MCP Chat evidence, including forced `internal_search` and exclusive `vbpl_export` source proof: Tasks 1 and 9.
 - All 15 Article 4 groups, issuer-sensitive/unknown/non-normative/legacy states: Task 2.
 - Status, 24-hour evidence, effective period, jurisdiction, district transition, and provision coordinates: Task 3.
 - Verified structured mapping, unknown codes, text candidates, evidence hashes, deduplication, and self-edge exclusion: Task 4.
 - Stable IDs, ordered sections, compact headers, schema-v2 validation, atomic promotion, and prior release preservation: Task 5.
 - Schema-v1 compatibility, schema-v2 `TextSection` mapping, unsupported-version refusal, batching, and checksum prevalidation: Task 6.
 - Retrieval, conflict, unresolved, bundle, safety, and chunk-growth gates: Task 7.
-- Context inference, focused clarification, conservative hierarchy rules, citations, canonical prompt, and current-doc updates: Task 8.
-- Candidate-first rollout, connector-first deployment, one full re-index, prompt application, live Chat acceptance, and exact rollback: Task 9.
+- Context inference, focused clarification, forced Internal Search, conservative hierarchy rules, citations, canonical prompt, and current-doc updates: Task 8.
+- Candidate-first rollout, connector-first deployment, one full re-index, prompt application, live Chat acceptance with tool/source evidence, and exact rollback: Task 9.
 
 ### Type consistency
 
