@@ -20,7 +20,6 @@ def test_trigger_posts_run_once() -> None:
     }
 
 
-
 @respx.mock
 def test_trigger_raises_on_failure() -> None:
     respx.post("http://onyx:8080/manage/admin/connector/run-once").mock(
@@ -49,3 +48,20 @@ def test_create_connector_posts_creation_request() -> None:
         "access_type": "public",
     }
 
+
+@respx.mock
+def test_wait_returns_matching_completed_attempt_with_chunk_total() -> None:
+    respx.post("http://onyx:8080/manage/admin/connector/indexing-status").mock(
+        return_value=httpx.Response(200, json={"statuses": [{
+            "connector_id": 7,
+            "last_status": "success",
+            "in_progress": False,
+            "total_chunks": 120,
+            "attempt_id": 41,
+        }]})
+    )
+    status = OnyxConnectorClient(
+        Settings(onyx_base_url="http://onyx:8080")
+    ).wait_for_indexed(7, timeout_seconds=1)
+    assert status.attempt_id == 41
+    assert status.total_chunks == 120

@@ -1,11 +1,22 @@
 import time
 from typing import Any
 import httpx
+from pydantic import BaseModel, ConfigDict
 from vbpl_kb.config import Settings
 
 
 class ConnectorControlError(Exception):
     pass
+
+
+class ConnectorStatus(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    connector_id: int
+    attempt_id: int | None = None
+    last_status: str = "unknown"
+    in_progress: bool = False
+    total_chunks: int = 0
+    raw_status: dict[str, Any] = {}
 
 
 class OnyxConnectorClient:
@@ -41,6 +52,36 @@ class OnyxConnectorClient:
             if isinstance(e, ConnectorControlError):
                 raise
             raise ConnectorControlError(f"Failed to trigger connector {connector_id}") from e
+
+    def get_status(self, connector_id: int) -> ConnectorStatus:
+        path = self.settings.onyx_connector_status_path
+        try:
+            response = self._request("POST", path, json={})
+            if response.status_code != 200:
+                response = self._request("GET", path)
+
+            if response.status_code == 200:
+                data = response.json()
+                groups = data if isinstance(data, list) else data.get("statuses", [])
+                for group in groups:
+                    if isinstance(group, dict):
+                        items = group.get("indexing_statuses", [group])
+                        for item in items:
+                            if isinstance(item, dict):
+                                cid = item.get("connector_id")
+                                src = item.get("source")
+                                if cid == connector_id or src == "vbpl_export":
+                                    return ConnectorStatus(
+                                        connector_id=connector_id,
+                                        attempt_id=item.get("attempt_id"),
+                                        last_status=str(item.get("last_status") or item.get("status") or "unknown"),
+                                        in_progress=bool(item.get("in_progress", False)),
+                                        total_chunks=int(item.get("total_chunks", 0)),
+                                        raw_status=item,
+                                    )
+            return ConnectorStatus(connector_id=connector_id)
+        except Exception as e:
+            raise ConnectorControlError(f"Failed to get status for connector {connector_id}") from e
 
     def create_connector(self, name: str = "VBPL Export") -> int:
         try:
@@ -88,42 +129,19 @@ class OnyxConnectorClient:
                 raise
             raise ConnectorControlError("Failed to create connector in Onyx") from e
 
-    def wait_for_indexed(self, connector_id: int, timeout_seconds: float | None = None) -> None:
+    def wait_for_indexed(self, connector_id: int, timeout_seconds: float | None = None) -> ConnectorStatus:
         timeout = timeout_seconds if timeout_seconds is not None else self.settings.onyx_connector_timeout_seconds
         start_time = time.monotonic()
-        path = self.settings.onyx_connector_status_path
 
         while True:
             if time.monotonic() - start_time > timeout:
                 raise ConnectorControlError(f"Timed out waiting for connector {connector_id} to finish indexing")
 
             try:
-                response = self._request("POST", path, json={})
-                if response.status_code != 200:
-                    response = self._request("GET", path)
-
-                if response.status_code == 200:
-                    data = response.json()
-                    in_progress = False
-                    groups = data if isinstance(data, list) else data.get("statuses", [])
-                    for group in groups:
-                        if isinstance(group, dict):
-                            items = group.get("indexing_statuses", [group])
-                            for item in items:
-                                if isinstance(item, dict):
-                                    if item.get("source") == "vbpl_export" or item.get("connector_id") == connector_id:
-                                        if item.get("in_progress") is True:
-                                            in_progress = True
-                                            break
-                                        status_str = str(item.get("last_status") or item.get("status", "")).casefold()
-                                        if status_str in ("in_progress", "running", "indexing"):
-                                            in_progress = True
-                                            break
-                    if not in_progress:
-                        return
-            except Exception as e:
-                if isinstance(e, ConnectorControlError):
-                    raise
+                status = self.get_status(connector_id)
+                if not status.in_progress and status.last_status in ("success", "completed"):
+                    return status
+            except Exception:
                 pass
 
             time.sleep(2.0)
