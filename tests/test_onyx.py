@@ -2,15 +2,15 @@ import httpx
 import json
 import pytest
 import respx
+from vbpl_kb.models import OnyxDocument, OnyxSection
 from vbpl_kb.onyx import OnyxIngestionClient
-from vbpl_kb.models import OnyxDocument
 from vbpl_kb.config import Settings
 
 @pytest.fixture
 def onyx_document():
     return OnyxDocument(
         document_id="vbpl:123",
-        content="Content of document 123.",
+        sections=(OnyxSection(section_id="whole", text="Content of document 123.", link="https://vbpl.vn/doc/123"),),
         link="https://vbpl.vn/doc/123",
         metadata={"status_checked_at": "2026-07-21T00:00:00+00:00"}
     )

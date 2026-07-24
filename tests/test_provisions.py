@@ -1,4 +1,3 @@
-import pytest
 from datetime import datetime, UTC
 from vbpl_kb.provisions import split_provisions
 from vbpl_kb.models import StatusObservation
