@@ -45,6 +45,7 @@ reference, state, release, connector, or publication behavior.
   configuration, or untracked edits under `.onyx/onyx`.
 - Do not add a production dependency on the diagnostic direct-ingestion path;
   the daily path uses the validated export and persistent connector.
+- Update AGENTS.md and related documentation under `docs/` each time there are major changes to the project's architecture, dependencies, schemas, operations, or workflows.
 
 ## Safe development loop
 
