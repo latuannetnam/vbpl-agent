@@ -1,6 +1,6 @@
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict
 
 
@@ -59,4 +59,20 @@ class ActiveRelease(BaseModel):
     manifest_path: str
     manifest_sha256: str
     published_at: str
+
+
+class AuthorityClassification(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    hierarchy_regime: str
+    article4_order: int | None
+    normative_form: str
+    authority_group: str
+    issuer_type: str
+    classification_status: Literal[
+        "known", "unknown", "not_normative", "legacy_transitional"
+    ]
+    classification_source: str
+    classification_version: str
+    is_normative: bool
+
 
