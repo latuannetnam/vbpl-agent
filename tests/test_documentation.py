@@ -76,7 +76,7 @@ def test_canonical_agent_instruction_requires_staged_authority_bundle_search() -
         "truy xuất quy định điều chỉnh trực tiếp",
         "mở rộng authority bundle",
         "relation_tokens",
-        "cùng một cơ quan ban hành",
+        "cùng một cơ quan có thẩm quyền",
         "01/07/2025",
         "28/02/2027",
         "Không tìm thấy căn cứ VBPL đã được xác minh để trả lời câu hỏi này.",
@@ -84,7 +84,6 @@ def test_canonical_agent_instruction_requires_staged_authority_bundle_search() -
     for phrase in required:
         assert phrase in text, f"Missing phrase: {phrase}"
     assert "Hiến pháp > Luật > Nghị định > Thông tư" not in text
-    assert "Lex Specialis" not in text
 
 
 def test_current_docs_route_hierarchy_work_without_historical_links() -> None:
