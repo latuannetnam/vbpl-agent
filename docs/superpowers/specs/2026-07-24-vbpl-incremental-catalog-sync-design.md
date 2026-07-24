@@ -168,6 +168,17 @@ Focused tests must demonstrate:
 The implementation must run the repository's focused tests and the required
 full pytest, Ruff, and mypy verification set before commit.
 
+## Documentation completion requirement
+
+After the incremental synchronization behavior has been implemented and
+verified, update `AGENTS.md` and the current canonical documentation that owns
+the affected architecture, development workflow, and operations. Document the
+actual supported catalog-reconciliation, delta, deletion-confirmation,
+recovery, and full-reindex behavior; do not update current guidance in advance
+of implementation. Keep `AGENTS.md` and README as concise entrypoints and do
+not route coding agents to this dated design specification as implementation
+guidance.
+
 ## Out of scope
 
 - Treating the Hugging Face dataset as current-law or change-feed authority.
