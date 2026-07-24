@@ -3,7 +3,12 @@ import unicodedata
 from html import unescape
 from html.parser import HTMLParser
 from typing import Any
-from vbpl_kb.models import StatusObservation, OnyxDocument
+
+from vbpl_kb.models import StatusObservation, OnyxDocument, OnyxSection, Provision
+from vbpl_kb.authority import classify_authority, AuthorityClassification
+from vbpl_kb.applicability import build_applicability, ApplicabilityEnvelope
+from vbpl_kb.provisions import split_provisions
+
 
 class _HTMLText(HTMLParser):
     _break_tags = {"p", "div", "br", "tr", "li", "h1", "h2", "h3", "h4", "h5", "h6"}
@@ -48,29 +53,6 @@ def _content(raw: dict[str, Any]) -> str:
     return ""
 
 
-def _render_provisions(text: str) -> tuple[str, str]:
-    rendered: list[str] = []
-    has_article = False
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        if re.match(r"^Điều\s+\d+(?:[.\s]|$)", line, re.IGNORECASE):
-            rendered.append(f"## {line}")
-            has_article = True
-        elif re.match(r"^\d+\.\s+", line):
-            number, body = line.split(".", 1)
-            rendered.append(f"### Khoản {number}.{body}")
-        elif re.match(r"^[a-zđ]\)\s+", line, re.IGNORECASE):
-            point, body = line.split(")", 1)
-            rendered.append(f"#### Điểm {point}.{body}")
-        else:
-            rendered.append(line)
-    if not has_article:
-        return f"## Toàn văn\n\n{text}", "unparsed"
-    return "\n\n".join(rendered), "parsed"
-
-
 def normalize_legal_status(raw_status: str | None) -> str:
     value = (raw_status or "").casefold()
     if "hết hiệu lực một phần" in value:
@@ -86,50 +68,113 @@ def normalize_legal_status(raw_status: str | None) -> str:
     return "unknown"
 
 
-def normalize_instrument(raw: dict[str, Any], status: StatusObservation, revision: str) -> OnyxDocument:
-    vbpl_id = str(raw.get("id") or status.vbpl_id)
-    title = raw.get("title") or f"Document {vbpl_id}"
-    full_text = _content(raw)
-    
-    canonical_link = f"https://vbpl.vn/van-ban/chi-tiet/{_slug(title)}--{vbpl_id}"
-    status_checked_at_iso = status.checked_at.isoformat()
-    
-    provenance = (
-        f"Document ID: vbpl:{vbpl_id}\n"
-        f"Title: {title}\n"
-        f"Link: {canonical_link}\n"
-        f"Status: {status.eff_status}\n"
-        f"Verification Time: {status_checked_at_iso}\n"
-        f"Corpus Revision: {revision}\n\n"
+def render_context_header(
+    *,
+    title: str,
+    document_number: str,
+    provision: Provision,
+    authority: AuthorityClassification,
+    applicability: ApplicabilityEnvelope,
+    relation_tokens: tuple[str, ...] = (),
+) -> str:
+    order = (
+        str(authority.article4_order)
+        if authority.article4_order is not None
+        else "unknown"
     )
-    
-    body, citation_structure = _render_provisions(full_text)
-        
-    content = provenance + body
-    
-    metadata = {
-        "legal_status": status.eff_status,
-        "legal_status_raw": status.eff_status,
-        "legal_status_normalized": normalize_legal_status(status.eff_status),
-        "status_source": getattr(status, "status_source", "api"),
-        "status_checked_at": status_checked_at_iso,
-        "verified_at": status_checked_at_iso,
-        "effective_from": status.eff_from or "",
-        "source_url": canonical_link,
-        "corpus_revision": revision,
-        "document_type": raw.get("docType", raw.get("documentType", "")),
-        "legal_area": raw.get("legalArea", ""),
-        "issuer": raw.get("agencyName", raw.get("issuer", "")),
-        "scope": raw.get("scope", ""),
-        "citation_structure": citation_structure,
-        "document_number": raw.get("docNum", ""),
-        "title": title,
-    }
-    
-    return OnyxDocument(
-        document_id=f"vbpl:{vbpl_id}",
-        content=content,
-        link=canonical_link,
-        metadata=metadata
-    )
+    relations = ", ".join(relation_tokens) if relation_tokens else "none"
+    return "\n".join((
+        f"Văn bản: {title}",
+        f"Số hiệu: {document_number}",
+        f"Vị trí: {provision.provision_key}",
+        f"Hình thức: {authority.normative_form}",
+        f"Cơ quan: {authority.issuer_type}",
+        f"Thẩm quyền Điều 4: {order}",
+        f"Trạng thái: {applicability.legal_status_normalized}",
+        f"Xác minh: {applicability.verified_at}",
+        f"Hiệu lực: {applicability.effective_from} -> {applicability.effective_to}",
+        f"Phạm vi: {applicability.jurisdiction_level}:{applicability.jurisdiction_name}",
+        f"Quan hệ đã xác minh: {relations}",
+    ))
 
+
+def normalize_instrument(
+    raw: dict[str, Any],
+    status: StatusObservation,
+    revision: str,
+    relation_tokens: tuple[str, ...] = (),
+) -> OnyxDocument:
+    vbpl_id = str(raw.get("id") or status.vbpl_id)
+    doc_num = str(raw.get("docNum") or raw.get("document_number") or "")
+    title = str(raw.get("title") or f"Document {vbpl_id}")
+    full_text = _content(raw)
+
+    doc_type = raw.get("docType") or raw.get("document_type") or raw.get("normative_form") or ""
+    issuer = raw.get("agencyName") or raw.get("issuer") or ""
+
+    authority = classify_authority(doc_type, issuer)
+    applicability = build_applicability(raw, status, authority, revision)
+    parsed_provisions = split_provisions(full_text)
+
+    canonical_link = f"https://vbpl.vn/van-ban/chi-tiet/{_slug(title)}--{vbpl_id}"
+
+    sections: list[OnyxSection] = []
+    citation_structures: set[str] = set()
+
+    for prov in parsed_provisions:
+        citation_structures.add(prov.citation_structure)
+        header = render_context_header(
+            title=title,
+            document_number=doc_num,
+            provision=prov,
+            authority=authority,
+            applicability=applicability,
+            relation_tokens=relation_tokens,
+        )
+        sec_text = f"{header}\n\n{prov.text}"
+        sections.append(
+            OnyxSection(
+                section_id=prov.provision_key,
+                text=sec_text,
+                link=canonical_link,
+            )
+        )
+
+    cit_struct = "parsed" if "parsed" in citation_structures else "unparsed"
+
+    metadata: dict[str, Any] = {
+        "hierarchy_regime": authority.hierarchy_regime,
+        "article4_order": str(authority.article4_order) if authority.article4_order is not None else "unknown",
+        "normative_form": authority.normative_form,
+        "authority_group": authority.authority_group,
+        "issuer_type": authority.issuer_type,
+        "classification_status": authority.classification_status,
+        "classification_source": authority.classification_source,
+        "classification_version": authority.classification_version,
+        "is_normative": str(authority.is_normative),
+        "legal_status_raw": applicability.legal_status_raw,
+        "legal_status_normalized": applicability.legal_status_normalized,
+        "verified_at": applicability.verified_at,
+        "status_source": applicability.status_source,
+        "effective_from": applicability.effective_from,
+        "effective_to": applicability.effective_to,
+        "jurisdiction_level": applicability.jurisdiction_level,
+        "jurisdiction_code": applicability.jurisdiction_code,
+        "jurisdiction_name": applicability.jurisdiction_name,
+        "transitional_until": applicability.transitional_until,
+        "source_url": applicability.source_url,
+        "corpus_revision": applicability.corpus_revision,
+        "status_evidence_hash": applicability.status_evidence_hash,
+        "citation_structure": cit_struct,
+        "document_number": doc_num,
+        "title": title,
+        "relation_tokens": list(relation_tokens),
+    }
+
+    return OnyxDocument(
+        projection_schema_version=2,
+        document_id=f"vbpl:{vbpl_id}",
+        sections=tuple(sections),
+        link=canonical_link,
+        metadata=metadata,
+    )

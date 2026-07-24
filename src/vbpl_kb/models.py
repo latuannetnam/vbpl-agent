@@ -34,13 +34,23 @@ class CrawlRun(BaseModel):
     started_at: datetime
     finished_at: datetime | None
 
+class OnyxSection(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    section_id: str
+    text: str
+    link: str
+
 class OnyxDocument(BaseModel):
     model_config = ConfigDict(frozen=True)
-    
+    projection_schema_version: Literal[2] = 2
     document_id: str
-    content: str
+    sections: tuple[OnyxSection, ...]
     link: str
     metadata: dict[str, Any]
+
+    @property
+    def content(self) -> str:
+        return "\n\n".join(section.text for section in self.sections)
 
 class ReleaseManifest(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -76,3 +86,32 @@ class AuthorityClassification(BaseModel):
     is_normative: bool
 
 
+class ApplicabilityEnvelope(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    legal_status_raw: str
+    legal_status_normalized: str
+    verified_at: str
+    status_source: str
+    effective_from: str
+    effective_to: str
+    jurisdiction_level: Literal[
+        "national", "province", "commune", "special_zone",
+        "legacy_district", "unknown"
+    ]
+    jurisdiction_code: str
+    jurisdiction_name: str
+    transitional_until: str
+    source_url: str
+    corpus_revision: str
+    status_evidence_hash: str
+
+
+class Provision(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    provision_key: str
+    article_number: str
+    clause_number: str
+    point_label: str
+    provision_heading: str
+    citation_structure: Literal["parsed", "unparsed"]
+    text: str

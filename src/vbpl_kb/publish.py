@@ -31,16 +31,7 @@ def build_projection(
     references: list[LegalReference] | None = None,
     store: StateStore | None = None,
 ) -> OnyxDocument:
-    doc = normalize_instrument(raw, status, revision)
-    if references:
-        content = append_related_documents_section(doc.content, references, store)
-        return OnyxDocument(
-            document_id=doc.document_id,
-            content=content,
-            link=doc.link,
-            metadata=doc.metadata,
-        )
-    return doc
+    return normalize_instrument(raw, status, revision)
 
 
 
