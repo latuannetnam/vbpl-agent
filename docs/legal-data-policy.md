@@ -9,8 +9,8 @@
 
 The official VBPL service (`vbpl.vn` and its public gateway API) is the legal
 authority. Every indexed instrument retains its official source URL, legal
-status, verification time, corpus revision, provision structure, and retained
-raw evidence. The Hugging Face dataset is bootstrap or coverage-comparison input
+status, verification time, corpus revision, provision structure, authority
+classification, applicability envelope, and retained raw evidence. The Hugging Face dataset is bootstrap or coverage-comparison input
 only; it never establishes current legal status.
 
 ## Legal-status evidence

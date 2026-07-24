@@ -18,14 +18,14 @@ Face dataset never establish legal force.
 ```text
 Official VBPL API and canonical pages
   -> raw snapshots and SQLite state
-  -> normalization and legal-status verification
-  -> reference resolution
-  -> checksummed candidate release
+  -> normalization, authority classification, applicability envelope, and deterministic provision splitting
+  -> verified legal-reference graph and relation tokens
+  -> checksummed schema-v2 candidate release
   -> atomic active-release pointer
   -> read-only export mount
-  -> VBPL Export Connector
+  -> VBPL Export Connector (schema-v2 section-preserving)
   -> Onyx index
-  -> scoped VBPL Legal Agent
+  -> scoped VBPL Legal Agent with staged authority bundle retrieval
 ```
 
 The crawler owns acquisition and resume. The normalizer and state layer own
@@ -40,9 +40,10 @@ documents. Onyx owns chunking, embedding, indexing, retrieval, and the Chat UI.
 | Settings and CLI | `src/vbpl_kb/config.py`, `src/vbpl_kb/cli.py` |
 | Official API and canonical-page fallback | `src/vbpl_kb/vbpl_client.py`, `src/vbpl_kb/vbpl_fallback.py` |
 | Crawl and persisted source state | `src/vbpl_kb/crawl.py`, `src/vbpl_kb/state.py` |
-| Schema, normalization, and references | `src/vbpl_kb/models.py`, `src/vbpl_kb/normalize.py`, `src/vbpl_kb/references.py` |
-| Document projection and releases | `src/vbpl_kb/publish.py`, `src/vbpl_kb/releases.py` |
-| Legacy diagnostic publisher and connector trigger | `src/vbpl_kb/onyx.py`, `src/vbpl_kb/connector_control.py` |
+| Schema, normalization, authority & provisions | `src/vbpl_kb/models.py`, `src/vbpl_kb/normalize.py`, `src/vbpl_kb/authority.py`, `src/vbpl_kb/applicability.py`, `src/vbpl_kb/provisions.py` |
+| References and legal relationship graph | `src/vbpl_kb/references.py` |
+| Document projection, evaluation & releases | `src/vbpl_kb/publish.py`, `src/vbpl_kb/releases.py`, `src/vbpl_kb/evaluate.py`, `src/vbpl_kb/acceptance.py` |
+| Connector trigger & Onyx chat client | `src/vbpl_kb/onyx.py`, `src/vbpl_kb/connector_control.py`, `src/vbpl_kb/onyx_chat.py` |
 | Onyx custom connector and frontend overlay | `infra/onyx/overlay/` |
 | Local Onyx lifecycle | `scripts/bootstrap-onyx.ps1`, `scripts/start-onyx.ps1`, `infra/onyx/docker-compose.vbpl-*.yml` |
 
