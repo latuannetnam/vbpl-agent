@@ -1,0 +1,48 @@
+[
+  {
+    "case_id": "law-87-controls-hierarchy",
+    "messages": ["Theo pháp luật hiện hành, Điều 4 Luật Ban hành VBQPPL quy định hệ thống VBQPPL như thế nào?"],
+    "expected_document_ids": ["vbpl:178717"],
+    "expected_provision_keys": ["dieu-1/khoan-1"],
+    "excluded_document_ids": []
+  },
+  {
+    "case_id": "district-transition-context",
+    "messages": [
+      "Tôi đang xem quy định áp dụng tại Việt Nam vào tháng 7 năm 2026.",
+      "Văn bản của HĐND và UBND cấp huyện trước khi sắp xếp còn hiệu lực không?"
+    ],
+    "expected_document_ids": ["vbpl:178717"],
+    "expected_provision_keys": ["dieu-3/khoan-1"],
+    "excluded_document_ids": []
+  },
+  {
+    "case_id": "district-transition-expired",
+    "messages": ["Đến ngày 01/03/2027, có thể mặc nhiên coi văn bản cấp huyện trước sắp xếp vẫn còn hiệu lực không?"],
+    "expected_document_ids": ["vbpl:178717"],
+    "expected_provision_keys": ["dieu-3"],
+    "excluded_document_ids": []
+  },
+  {
+    "case_id": "amendment-family",
+    "messages": ["Luật 87/2025/QH15 sửa đổi văn bản nào và căn cứ pháp lý nào chứng minh quan hệ đó?"],
+    "expected_document_ids": ["vbpl:178717", "vbpl:175440"],
+    "expected_provision_keys": ["dieu-1"],
+    "excluded_document_ids": []
+  },
+  {
+    "case_id": "partial-effect-fail-closed",
+    "messages": ["Có thể dựa vào toàn bộ Luật 64/2025/QH15 như pháp luật hiện hành mà không kiểm tra phần bị sửa đổi không?"],
+    "expected_document_ids": ["vbpl:175440", "vbpl:178717"],
+    "expected_provision_keys": [],
+    "excluded_document_ids": []
+  },
+  {
+    "case_id": "material-jurisdiction-clarification",
+    "messages": ["Nghị quyết của địa phương này có áp dụng cho trường hợp của tôi không?"],
+    "expected_document_ids": [],
+    "expected_provision_keys": [],
+    "excluded_document_ids": [],
+    "expects_clarification": true
+  }
+]

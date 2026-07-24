@@ -1,4 +1,5 @@
 import json
+import hashlib
 import typer
 from pathlib import Path
 from typing import Any
@@ -228,6 +229,85 @@ def evaluate(
     
     if not report.passed:
         raise typer.Exit(code=1)
+
+
+@app.command(name="onyx-acceptance")
+def onyx_acceptance(
+    benchmark_path: Path = typer.Argument(..., help="Path to benchmark JSON file"),
+    label: str = typer.Option(..., "--label"),
+    prompt_path: Path = typer.Option(
+        Path("docs/onyx-agent-instruction.md"), "--prompt-path"
+    ),
+    output_path: Path | None = typer.Option(None, "--output"),
+    record_only: bool = typer.Option(False, "--record-only"),
+) -> None:
+    settings = Settings()
+    if not benchmark_path.exists():
+        typer.echo(f"Benchmark file not found: {benchmark_path}")
+        raise typer.Exit(code=1)
+
+    if (
+        settings.onyx_persona_id is None
+        or not settings.onyx_model_name
+        or settings.onyx_connector_id is None
+        or settings.onyx_internal_search_tool_id is None
+        or not settings.onyx_document_set_name
+    ):
+        typer.echo("Onyx acceptance prevalidation failed: Required Settings missing.")
+        raise typer.Exit(code=1)
+
+    exporter = ReleaseExporter(StateStore.open(Path("data/state.sqlite3")), settings.export_dir)
+    active_release = exporter.read_active()
+    if not active_release:
+        typer.echo("Onyx acceptance prevalidation failed: Readable active release missing.")
+        raise typer.Exit(code=1)
+    release_id = active_release.release_id
+
+    prompt_sha256 = ""
+    if prompt_path.exists():
+        prompt_sha256 = hashlib.sha256(prompt_path.read_bytes()).hexdigest()
+
+    connector_status: dict[str, Any] = {}
+    if settings.onyx_connector_id is not None:
+        connector_client = OnyxConnectorClient(settings)
+        if hasattr(connector_client, "get_status"):
+            try:
+                status_obj = getattr(connector_client, "get_status")(settings.onyx_connector_id)
+                connector_status = status_obj.model_dump()
+            except Exception:
+                connector_status = {"connector_id": settings.onyx_connector_id}
+        else:
+            connector_status = {"connector_id": settings.onyx_connector_id}
+
+    with open(benchmark_path, "r", encoding="utf-8") as f:
+        cases_data = json.load(f)
+
+    from vbpl_kb.acceptance import AcceptanceCase, AcceptanceContext, run_acceptance
+    from vbpl_kb.onyx_chat import OnyxChatClient
+
+    cases = [AcceptanceCase.model_validate(c) for c in cases_data]
+    chat_client = OnyxChatClient(settings)
+
+    context = AcceptanceContext(
+        label=label,
+        model_name=settings.onyx_model_name,
+        persona_id=settings.onyx_persona_id,
+        prompt_sha256=prompt_sha256,
+        release_id=release_id,
+        connector_status=connector_status,
+    )
+
+    report = run_acceptance(cases, chat_client, context)
+
+    out_file = output_path or (settings.evaluation_dir / f"hierarchy-{label}.json")
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_file, "w", encoding="utf-8") as f:
+        f.write(report.model_dump_json(indent=2))
+
+    typer.echo(f"Acceptance report written to {out_file}. Passed: {report.passed}")
+    if not record_only and not report.passed:
+        raise typer.Exit(code=1)
+
 
 if __name__ == "__main__":
     app()

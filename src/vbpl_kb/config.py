@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     onyx_connector_run_once_path: str = "/manage/admin/connector/run-once"
     onyx_connector_status_path: str = "/manage/admin/connector/indexing-status"
     onyx_connector_timeout_seconds: float = 7200.0
+    onyx_chat_path: str = "/chat/send-chat-message"
+    onyx_persona_id: int | None = None
+    onyx_model_name: str = ""
+    onyx_internal_search_tool_id: int | None = None
+    onyx_document_set_name: str = ""
+    evaluation_dir: Path = Path("data/evaluations")
     freshness_hours: int = 24
     request_timeout_seconds: float = 30.0
     onyx_request_timeout_seconds: float = 120.0
