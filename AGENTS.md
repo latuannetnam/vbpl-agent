@@ -63,6 +63,12 @@ uv run ruff check .
 uv run mypy src
 ```
 
+6. Verify Onyx OpenSearch index Schema-v2 metadata completeness across 10 random documents:
+
+```powershell
+uv run python -c "import sqlite3, random, subprocess, sys; sys.stdout.reconfigure(encoding='utf-8'); conn = sqlite3.connect('data/state.sqlite3'); cursor = conn.cursor(); cursor.execute('SELECT DISTINCT vbpl_id FROM raw_snapshots WHERE endpoint = \'detail\''); ids = random.sample([r[0] for r in cursor.fetchall()], 10); script = open('scripts/verify-schema-v2-index.py', encoding='utf-8').read(); cmd = ['docker', 'exec', '-i', 'vbpl-onyx-background-1', 'python', '-', *ids]; res = subprocess.run(cmd, input=script, capture_output=True, text=True, encoding='utf-8'); print(res.stdout)"
+```
+
 Historical records in `docs/superpowers/` explain prior decisions but are not
 current implementation instructions. Use them only when a current document
 explicitly names them as background.
