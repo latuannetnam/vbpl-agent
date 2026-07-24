@@ -69,6 +69,8 @@ class ReleaseManifest(BaseModel):
     manifest_path: Path
     manifest_sha256: str
     document_count: int
+    section_count: int = 0
+    projection_schema_version: int = 2
     published_at: str = ""
     documents: list[dict[str, Any]] = []
 

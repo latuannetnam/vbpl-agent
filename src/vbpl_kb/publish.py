@@ -9,7 +9,6 @@ from vbpl_kb.normalize import normalize_instrument
 from vbpl_kb.references import (
     extract_references,
     resolve_reference,
-    append_related_documents_section,
     extract_structured_references,
     normalize_signature
 )

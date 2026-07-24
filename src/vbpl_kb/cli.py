@@ -231,6 +231,76 @@ def evaluate(
         raise typer.Exit(code=1)
 
 
+@app.command(name="export-candidate")
+def export_candidate(
+    db_path: str = typer.Option("data/state.sqlite3", "--db-path"),
+    revision: str = typer.Option(..., "--revision"),
+) -> None:
+    settings = Settings()
+    store = StateStore.open(Path(db_path))
+    exporter = ReleaseExporter(store, settings.export_dir)
+    try:
+        manifest = exporter.write_candidate(revision)
+        typer.echo(f"Candidate {revision} exported successfully (documents={manifest.document_count}, sections={manifest.section_count}).")
+    except ReleaseExportBlocked as e:
+        typer.echo(f"Export candidate blocked: {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command(name="validate-release")
+def validate_release(
+    db_path: str = typer.Option("data/state.sqlite3", "--db-path"),
+    revision: str = typer.Option(..., "--revision"),
+) -> None:
+    settings = Settings()
+    store = StateStore.open(Path(db_path))
+    exporter = ReleaseExporter(store, settings.export_dir)
+    try:
+        manifest = exporter.load_manifest(revision)
+        exporter.validate_candidate(manifest)
+        typer.echo(f"Release {revision} validated successfully.")
+    except ReleaseExportBlocked as e:
+        typer.echo(f"Release validation failed: {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command(name="promote-release")
+def promote_release(
+    db_path: str = typer.Option("data/state.sqlite3", "--db-path"),
+    revision: str = typer.Option(..., "--revision"),
+) -> None:
+    settings = Settings()
+    store = StateStore.open(Path(db_path))
+    exporter = ReleaseExporter(store, settings.export_dir)
+    try:
+        manifest = exporter.load_manifest(revision)
+        exporter.validate_candidate(manifest)
+        active = exporter.promote(manifest)
+        typer.echo(f"Release {active.release_id} promoted successfully.")
+    except ReleaseExportBlocked as e:
+        typer.echo(f"Promote release blocked: {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command(name="reindex-connector")
+def reindex_connector(
+    from_beginning: bool = typer.Option(True, "--from-beginning/--no-from-beginning"),
+) -> None:
+    settings = Settings()
+    if settings.onyx_connector_id is None:
+        typer.echo("Reindex connector failed: VBPL_KB_ONYX_CONNECTOR_ID is not configured.")
+        raise typer.Exit(code=1)
+    client = OnyxConnectorClient(settings)
+    try:
+        attempt_id = client.trigger(settings.onyx_connector_id, from_beginning=from_beginning)
+        typer.echo(f"Triggered re-indexing for connector {settings.onyx_connector_id} (attempt_id={attempt_id}). Waiting...")
+        client.wait_for_indexed(settings.onyx_connector_id, settings.onyx_connector_timeout_seconds)
+        typer.echo("Re-indexing completed successfully.")
+    except ConnectorControlError as e:
+        typer.echo(f"Reindex connector failed: {e}")
+        raise typer.Exit(code=1)
+
+
 @app.command(name="onyx-acceptance")
 def onyx_acceptance(
     benchmark_path: Path = typer.Argument(..., help="Path to benchmark JSON file"),
