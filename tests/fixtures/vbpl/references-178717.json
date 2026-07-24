@@ -1,0 +1,17 @@
+{
+  "source_id": "178717",
+  "api_url": "https://vbpl-bientap-gateway.moj.gov.vn/api/qtdc/public/doc/178717",
+  "canonical_relationship_url": "https://vbpl.vn/TW/Pages/vbpq-vanbanlienquan.aspx?ItemID=178717",
+  "references": [
+    {
+      "referenceType": 3,
+      "targetDocument": {"id": "32801", "docNum": "Không số"},
+      "canonical_label": "Văn bản căn cứ"
+    },
+    {
+      "referenceType": 10,
+      "targetDocument": {"id": "175440", "docNum": "64/2025/QH15"},
+      "canonical_label": "Văn bản bị sửa đổi"
+    }
+  ]
+}

@@ -41,7 +41,14 @@ def test_references_are_revision_scoped_and_deduplicated(tmp_path) -> None:
         to_vbpl_id="175258",
         to_provision_key=None,
         relation_type="cites",
+        evidence_kind="official_structured",
+        evidence_reference="https://vbpl.vn",
         source_quote="VBPL structured reference: 63/2025/QH15",
+        source_offset=None,
+        resolution_state="verified",
+        evidence_hash="a" * 64,
+        corpus_revision="run-1",
+        searchable=True,
     )
 
     store.record_reference("run-1", reference)

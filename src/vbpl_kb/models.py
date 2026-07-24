@@ -17,13 +17,23 @@ class StatusObservation(BaseModel):
 
 class LegalReference(BaseModel):
     model_config = ConfigDict(frozen=True)
-    
     from_vbpl_id: str
     from_provision_key: str
     to_vbpl_id: str | None
     to_provision_key: str | None
-    relation_type: str  # cites, legal_basis, guides_implementation, amends, supplements, replaces, repeals, unknown
+    relation_type: Literal[
+        "cites", "legal_basis", "details", "implements", "delegated_by",
+        "amends", "supplements", "replaces", "repeals", "suspends",
+        "continues_effect", "unknown"
+    ]
+    evidence_kind: Literal["official_structured", "official_page", "text_candidate"]
+    evidence_reference: str
     source_quote: str
+    source_offset: int | None
+    resolution_state: Literal["verified", "resolved_citation", "candidate", "unmapped", "unresolved"]
+    evidence_hash: str
+    corpus_revision: str
+    searchable: bool
 
 class CrawlRun(BaseModel):
     model_config = ConfigDict(frozen=True)

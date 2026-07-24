@@ -93,6 +93,21 @@ class StateStore:
             }
             if "run_id" not in reference_columns:
                 self.conn.execute("ALTER TABLE legal_references ADD COLUMN run_id TEXT")
+            if "evidence_kind" not in reference_columns:
+                self.conn.execute("ALTER TABLE legal_references ADD COLUMN evidence_kind TEXT NOT NULL DEFAULT 'text_candidate'")
+            if "evidence_reference" not in reference_columns:
+                self.conn.execute("ALTER TABLE legal_references ADD COLUMN evidence_reference TEXT NOT NULL DEFAULT ''")
+            if "source_offset" not in reference_columns:
+                self.conn.execute("ALTER TABLE legal_references ADD COLUMN source_offset INTEGER")
+            if "resolution_state" not in reference_columns:
+                self.conn.execute("ALTER TABLE legal_references ADD COLUMN resolution_state TEXT NOT NULL DEFAULT 'unresolved'")
+            if "evidence_hash" not in reference_columns:
+                self.conn.execute("ALTER TABLE legal_references ADD COLUMN evidence_hash TEXT NOT NULL DEFAULT ''")
+            if "corpus_revision" not in reference_columns:
+                self.conn.execute("ALTER TABLE legal_references ADD COLUMN corpus_revision TEXT NOT NULL DEFAULT ''")
+            if "searchable" not in reference_columns:
+                self.conn.execute("ALTER TABLE legal_references ADD COLUMN searchable INTEGER NOT NULL DEFAULT 0")
+
             self.conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_legal_ref_from
                 ON legal_references (from_vbpl_id, from_provision_key)
@@ -225,8 +240,9 @@ class StateStore:
         with self.conn:
             self.conn.execute(
                 """INSERT INTO legal_references
-                   (run_id, from_vbpl_id, from_provision_key, to_vbpl_id, to_provision_key, relation_type, source_quote)
-                   SELECT ?, ?, ?, ?, ?, ?, ?
+                   (run_id, from_vbpl_id, from_provision_key, to_vbpl_id, to_provision_key, relation_type, source_quote,
+                    evidence_kind, evidence_reference, source_offset, resolution_state, evidence_hash, corpus_revision, searchable)
+                   SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                    WHERE NOT EXISTS (
                        SELECT 1 FROM legal_references
                        WHERE run_id = ?
@@ -235,7 +251,7 @@ class StateStore:
                          AND to_vbpl_id IS ?
                          AND to_provision_key IS ?
                          AND relation_type = ?
-                         AND source_quote = ?
+                         AND evidence_kind = ?
                    )""",
                 (
                     run_id,
@@ -245,13 +261,20 @@ class StateStore:
                     reference.to_provision_key,
                     reference.relation_type,
                     reference.source_quote,
+                    getattr(reference, "evidence_kind", "text_candidate"),
+                    getattr(reference, "evidence_reference", ""),
+                    getattr(reference, "source_offset", None),
+                    getattr(reference, "resolution_state", "unresolved"),
+                    getattr(reference, "evidence_hash", ""),
+                    getattr(reference, "corpus_revision", run_id),
+                    1 if getattr(reference, "searchable", False) else 0,
                     run_id,
                     reference.from_vbpl_id,
                     reference.from_provision_key,
                     reference.to_vbpl_id,
                     reference.to_provision_key,
                     reference.relation_type,
-                    reference.source_quote,
+                    getattr(reference, "evidence_kind", "text_candidate"),
                 ),
             )
 
