@@ -151,10 +151,13 @@ class ReleaseExporter:
 
         manifest_path = self.export_dir / "releases" / run_id / "manifest.json"
         if manifest_path.exists():
-            candidate = self.load_manifest(run_id)
-            self.validate_candidate(candidate)
-            print(f"Release candidate {run_id} already exists and validated; skipping re-export.", flush=True)
-            return candidate
+            try:
+                candidate = self.load_manifest(run_id)
+                self.validate_candidate(candidate)
+                print(f"Release candidate {run_id} already exists and validated; skipping re-export.", flush=True)
+                return candidate
+            except ReleaseBlocked:
+                print(f"Existing candidate {run_id} failed validation; re-exporting...", flush=True)
 
         instrument_index: dict[str, str] = {}
         index_cursor = self.store.conn.cursor()

@@ -139,6 +139,34 @@ def normalize_instrument(
                 link=canonical_link,
             )
         )
+    if not sections:
+        fallback_prov = Provision(
+            provision_key="toan-van",
+            article_number="",
+            clause_number="",
+            point_label="",
+            provision_heading="Toàn văn",
+            title=title,
+            text=full_text if full_text and full_text.strip() else title,
+            citation_structure="unparsed",
+        )
+        header = render_context_header(
+            title=title,
+            document_number=doc_num,
+            provision=fallback_prov,
+            authority=authority,
+            applicability=applicability,
+            relation_tokens=relation_tokens,
+        )
+        sec_text = f"{header}\n\n{fallback_prov.text}"
+        sections.append(
+            OnyxSection(
+                section_id="toan-van",
+                text=sec_text,
+                link=canonical_link,
+            )
+        )
+        citation_structures.add("unparsed")
 
     cit_struct = "parsed" if "parsed" in citation_structures else "unparsed"
 

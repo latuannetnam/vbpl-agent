@@ -43,6 +43,14 @@ def test_unparsed_citation_structure(status) -> None:
     assert "Không có điều khoản nào rõ ràng." in doc.content
 
 
+def test_empty_full_text_creates_fallback_section(status) -> None:
+    raw = {"id": 10001, "title": "Văn bản chưa có nội dung text", "fullText": ""}
+    doc = normalize_instrument(raw, status, "vbpl-2026-07-21")
+    assert len(doc.sections) == 1
+    assert doc.sections[0].section_id == "toan-van"
+    assert "Văn bản chưa có nội dung text" in doc.content
+
+
 def test_partial_effect_status(raw_instrument, status) -> None:
     partial_status = StatusObservation(
         vbpl_id=status.vbpl_id,
