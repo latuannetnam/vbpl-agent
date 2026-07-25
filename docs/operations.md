@@ -42,11 +42,10 @@ Run commands through `uv run` from the repository root:
   uv run vbpl-kb crawl --db-path data/state.sqlite3 --revision vbpl-2026-07-23
   ```
 
-- **Diagnostic direct ingestion** is legacy-only and is not the normal daily
-  path.
+- **Reset and re-index Onyx vector store** drops current OpenSearch vector embeddings for the connector and re-indexes the promoted active release using `.env` settings (without re-crawling).
 
   ```powershell
-  uv run vbpl-kb publish-legacy --db-path data/state.sqlite3 --revision vbpl-2026-07-23
+  uv run python scripts/reset-and-reindex-onyx.py
   ```
 
 ## Docker Compose daily execution

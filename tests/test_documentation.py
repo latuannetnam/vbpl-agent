@@ -71,7 +71,7 @@ def test_canonical_agent_instruction_requires_staged_authority_bundle_search() -
     required = (
         "internal_search",
         "vbpl_export",
-        "24 giờ",
+        "phiên bản phát hành mới nhất",
         "xác định tọa độ pháp lý",
         "truy xuất quy định điều chỉnh trực tiếp",
         "mở rộng authority bundle",

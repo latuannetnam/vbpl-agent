@@ -35,12 +35,21 @@ class OnyxConnectorClient:
         with httpx.Client(timeout=self.settings.onyx_request_timeout_seconds) as client:
             return client.request(method, url, json=json, headers=self._headers())
 
-    def trigger(self, connector_id: int, from_beginning: bool = False) -> int:
+    def trigger(self, connector_id: int, from_beginning: bool = False, credential_ids: list[int] | None = None) -> int:
         path = self.settings.onyx_connector_run_once_path
+        if credential_ids is None:
+            try:
+                list_resp = self._request("GET", "/manage/admin/connector")
+                if list_resp.status_code == 200:
+                    for item in list_resp.json():
+                        if isinstance(item, dict) and item.get("id") == connector_id:
+                            credential_ids = item.get("credential_ids", [])
+            except Exception:
+                pass
         try:
             response = self._request("POST", path, json={
                 "connector_id": connector_id,
-                "credential_ids": None,
+                "credential_ids": credential_ids,
                 "from_beginning": from_beginning,
             })
             response.raise_for_status()
