@@ -2,8 +2,6 @@
 Script to verify Schema-v2 metadata completeness across 10 random documents directly from Onyx index.
 """
 import sys
-import json
-import random
 
 CORE_SCHEMA_V2_KEYS = {
     "hierarchy_regime",
@@ -91,11 +89,11 @@ def main() -> None:
                     passed_count += 1
             break
 
-        print(f"==========================================")
-        print(f"Schema-v2 Metadata Verification Summary:")
+        print("==========================================")
+        print("Schema-v2 Metadata Verification Summary:")
         print(f"Passed: {passed_count}/{len(doc_ids)}")
         print(f"Failed: {failed_count}/{len(doc_ids)}")
-        print(f"==========================================")
+        print("==========================================")
 
     except Exception as e:
         print(f"Error executing verification script: {e}", file=sys.stderr)

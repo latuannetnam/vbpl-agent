@@ -30,7 +30,7 @@ def main() -> None:
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    print(f"=== Onyx Vector Index Reset & Re-index Utility ===")
+    print("=== Onyx Vector Index Reset & Re-index Utility ===")
     print(f"Onyx Base URL: {base_url}")
     print(f"Connector ID: {connector_id}")
 

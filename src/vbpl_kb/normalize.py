@@ -146,7 +146,6 @@ def normalize_instrument(
             clause_number="",
             point_label="",
             provision_heading="Toàn văn",
-            title=title,
             text=full_text if full_text and full_text.strip() else title,
             citation_structure="unparsed",
         )
