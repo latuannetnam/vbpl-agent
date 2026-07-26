@@ -22,7 +22,11 @@ class VBPLExportConnector(LoadConnector, PollConnector, SlimConnector):
         corpus_view: str = "current",
         export_root: str = "/app/vbpl-export",
         batch_size: int = INDEX_BATCH_SIZE,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
+        if "corpus_view" in kwargs and kwargs["corpus_view"]:
+            corpus_view = str(kwargs["corpus_view"])
         if corpus_view not in ("current", "history", "evidence"):
             raise VBPLExportConnectorError(f"Invalid corpus_view: {corpus_view}")
         self.corpus_view = corpus_view
@@ -163,7 +167,7 @@ class VBPLExportConnector(LoadConnector, PollConnector, SlimConnector):
         if batch:
             yield batch
 
-    def retrieve_all_slim_documents(self) -> Generator[list[SlimDocument], None, None]:
+    def retrieve_all_slim_docs(self) -> Generator[list[SlimDocument], None, None]:
         manifest_path, _ = self._read_active_manifest()
         active_file = manifest_path.parent / self.corpus_view / "active-ids.jsonl"
 
@@ -182,3 +186,6 @@ class VBPLExportConnector(LoadConnector, PollConnector, SlimConnector):
 
         if batch:
             yield batch
+
+    def retrieve_all_slim_documents(self) -> Generator[list[SlimDocument], None, None]:
+        yield from self.retrieve_all_slim_docs()

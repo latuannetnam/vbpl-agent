@@ -75,8 +75,13 @@ def classify_authority(
     groups = regime.get("groups", [])
     version = regime.get("regime_version", "2025.1")
 
-    norm_form_clean = normative_form.strip()
-    issuer_clean = issuer.strip()
+    if isinstance(normative_form, dict):
+        normative_form = str(normative_form.get("name") or "")
+    if isinstance(issuer, dict):
+        issuer = str(issuer.get("name") or "")
+
+    norm_form_clean = str(normative_form or "").strip()
+    issuer_clean = str(issuer or "").strip()
 
     matched_group = None
     for group in groups:
@@ -106,17 +111,24 @@ def classify_authority(
     )
 
 
+DEFAULT_FRESHNESS_WINDOW = timedelta(hours=24)
+ELIGIBLE_STATUSES = {"còn hiệu lực", "hết hiệu lực một phần"}
+
+
 def is_current_eligible(
-    status: str,
+    status: str | Any,
     verified_at: datetime | date | None = None,
     now: datetime | None = None,
     parse_status: str = "verified_structured",
-    freshness: timedelta = timedelta(hours=24),
+    freshness: timedelta = DEFAULT_FRESHNESS_WINDOW,
 ) -> EligibilityDecision:
     now = now or datetime.now(timezone.utc)
     exclusion_reasons: list[str] = []
 
-    status_lower = status.strip().lower()
+    if isinstance(status, dict):
+        status = str(status.get("name") or "")
+
+    status_lower = str(status or "").strip().lower()
     in_force_keywords = ["còn hiệu lực", "hết hiệu lực một phần"]
     if not any(k in status_lower for k in in_force_keywords):
         exclusion_reasons.append("expired_or_repealed")
@@ -142,7 +154,7 @@ def is_current_eligible(
 
 
 def build_applicability(
-    status: str,
+    status: str | Any,
     verified_at: datetime | date | None = None,
     effective_from: date | None = None,
     effective_to: date | None = None,
@@ -150,13 +162,16 @@ def build_applicability(
     subject_tokens: Sequence[str] | None = None,
     overrides: Sequence[Any] = (),
 ) -> ApplicabilityEnvelopeDraft:
+    if isinstance(status, dict):
+        status = str(status.get("name") or "")
+
     eligibility = is_current_eligible(status, verified_at)
     dt_verified = verified_at or datetime.now(timezone.utc)
     if isinstance(dt_verified, date) and not isinstance(dt_verified, datetime):
         dt_verified = datetime.combine(dt_verified, datetime.min.time(), tzinfo=timezone.utc)
 
     return ApplicabilityEnvelopeDraft(
-        status=status,
+        status=str(status or "").strip(),
         verified_at=dt_verified,
         effective_from=effective_from,
         effective_to=effective_to,
