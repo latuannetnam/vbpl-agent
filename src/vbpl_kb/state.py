@@ -452,6 +452,34 @@ class StateStore:
             return None
         return dict(row)
 
+    def get_catalog_entries_for_run(self, run_id: str) -> list[CatalogEntry]:
+        rows = self.conn.execute(
+            """SELECT vbpl_id, fingerprint, title, doc_num, doc_type, updated_date, eff_status, eff_to, raw_json
+               FROM catalog_entries
+               WHERE run_id = ?""",
+            (run_id,),
+        ).fetchall()
+        result: list[CatalogEntry] = []
+        for r in rows:
+            try:
+                raw_payload = json.loads(r["raw_json"])
+            except Exception:
+                raw_payload = {}
+            result.append(
+                CatalogEntry(
+                    vbpl_id=r["vbpl_id"],
+                    fingerprint=r["fingerprint"],
+                    title=r["title"],
+                    doc_num=r["doc_num"],
+                    doc_type=r["doc_type"],
+                    updated_date=r["updated_date"],
+                    eff_status=r["eff_status"],
+                    eff_to=r["eff_to"],
+                    raw_payload=raw_payload,
+                )
+            )
+        return result
+
     def record_catalog_scan(self, run_id: str, entries: list[CatalogEntry], complete: bool = True) -> None:
         started_at = datetime.now(UTC).isoformat()
         finished_at = started_at if complete else None
