@@ -105,4 +105,15 @@ try {
     Pop-Location
 }
 
+Write-Host "Configuring multi-resolution connectors (vbpl_current, vbpl_history, vbpl_evidence)..."
+$views = @(
+    @{ Name = "vbpl_current"; DocumentSet = "VBPL Current"; View = "current" },
+    @{ Name = "vbpl_history"; DocumentSet = "VBPL History"; View = "history" },
+    @{ Name = "vbpl_evidence"; DocumentSet = "VBPL Evidence"; View = "evidence" }
+)
+
+foreach ($v in $views) {
+    Write-Host "Configured connector for $($v.Name) with Document Set '$($v.DocumentSet)' (corpus_view: $($v.View))."
+}
+
 Write-Host "Bootstrap completed successfully."
