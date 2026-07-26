@@ -108,7 +108,7 @@ def classify_authority(
 
 def is_current_eligible(
     status: str,
-    verified_at: datetime,
+    verified_at: datetime | date | None = None,
     now: datetime | None = None,
     parse_status: str = "verified_structured",
     freshness: timedelta = timedelta(hours=24),
@@ -120,6 +120,11 @@ def is_current_eligible(
     in_force_keywords = ["còn hiệu lực", "hết hiệu lực một phần"]
     if not any(k in status_lower for k in in_force_keywords):
         exclusion_reasons.append("expired_or_repealed")
+
+    if verified_at is None:
+        verified_at = now
+    elif isinstance(verified_at, date) and not isinstance(verified_at, datetime):
+        verified_at = datetime.combine(verified_at, datetime.min.time(), tzinfo=timezone.utc)
 
     if verified_at.tzinfo is None:
         verified_at = verified_at.replace(tzinfo=timezone.utc)
@@ -138,7 +143,7 @@ def is_current_eligible(
 
 def build_applicability(
     status: str,
-    verified_at: datetime,
+    verified_at: datetime | date | None = None,
     effective_from: date | None = None,
     effective_to: date | None = None,
     jurisdiction: str = "national",
@@ -146,9 +151,13 @@ def build_applicability(
     overrides: Sequence[Any] = (),
 ) -> ApplicabilityEnvelopeDraft:
     eligibility = is_current_eligible(status, verified_at)
+    dt_verified = verified_at or datetime.now(timezone.utc)
+    if isinstance(dt_verified, date) and not isinstance(dt_verified, datetime):
+        dt_verified = datetime.combine(dt_verified, datetime.min.time(), tzinfo=timezone.utc)
+
     return ApplicabilityEnvelopeDraft(
         status=status,
-        verified_at=verified_at,
+        verified_at=dt_verified,
         effective_from=effective_from,
         effective_to=effective_to,
         jurisdiction=jurisdiction,

@@ -23,15 +23,7 @@ from vbpl_kb.db_models import (
 )
 from vbpl_kb.evidence import EvidenceObject
 from vbpl_kb.legal_tree import LegalNodeDraft
-from vbpl_kb.models import CatalogEntry
-
-
-@dataclass(frozen=True)
-class CatalogChangeSet:
-    upsert_ids: list[int]
-    removal_candidate_ids: list[int]
-    tombstone_ids: list[int]
-    cleared_ids: list[int]
+from vbpl_kb.models import CatalogEntry, CatalogChangeSet
 
 
 @dataclass(frozen=True)
