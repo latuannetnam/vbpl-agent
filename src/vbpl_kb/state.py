@@ -2,7 +2,8 @@ import sqlite3
 import json
 from datetime import datetime, UTC
 from pathlib import Path
-from vbpl_kb.models import StatusObservation, CrawlRun
+from typing import Any
+from vbpl_kb.models import StatusObservation, CrawlRun, CatalogEntry, DeltaManifest
 
 class StateStore:
     def __init__(self, db_path: Path):
@@ -142,6 +143,84 @@ class StateStore:
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY (run_id) REFERENCES crawl_runs(run_id)
                 )
+            """)
+
+            # catalog_scans
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS catalog_scans (
+                    run_id TEXT PRIMARY KEY,
+                    complete INTEGER NOT NULL,
+                    item_count INTEGER NOT NULL DEFAULT 0,
+                    started_at TEXT NOT NULL,
+                    finished_at TEXT,
+                    FOREIGN KEY (run_id) REFERENCES crawl_runs(run_id)
+                )
+            """)
+
+            # catalog_entries
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS catalog_entries (
+                    run_id TEXT NOT NULL,
+                    vbpl_id TEXT NOT NULL,
+                    fingerprint TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    doc_num TEXT,
+                    doc_type TEXT,
+                    updated_date TEXT,
+                    eff_status TEXT,
+                    eff_to TEXT,
+                    raw_json TEXT NOT NULL,
+                    PRIMARY KEY (run_id, vbpl_id),
+                    FOREIGN KEY (run_id) REFERENCES catalog_scans(run_id)
+                )
+            """)
+            self.conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_catalog_entries_run
+                ON catalog_entries (run_id)
+            """)
+
+            # catalog_removals
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS catalog_removals (
+                    vbpl_id TEXT PRIMARY KEY,
+                    absence_count INTEGER NOT NULL DEFAULT 1,
+                    first_absent_run_id TEXT NOT NULL,
+                    last_absent_run_id TEXT NOT NULL,
+                    status TEXT NOT NULL
+                )
+            """)
+
+            # document_versions
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS document_versions (
+                    vbpl_id TEXT NOT NULL,
+                    version_id TEXT NOT NULL,
+                    fingerprint TEXT NOT NULL,
+                    run_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (vbpl_id, version_id),
+                    FOREIGN KEY (run_id) REFERENCES crawl_runs(run_id)
+                )
+            """)
+
+            # delta_batches
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS delta_batches (
+                    batch_id TEXT PRIMARY KEY,
+                    release_id TEXT NOT NULL,
+                    parent_release_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    upsert_ids_json TEXT NOT NULL,
+                    tombstone_ids_json TEXT NOT NULL,
+                    manifest_path TEXT NOT NULL,
+                    checksum_sha256 TEXT NOT NULL,
+                    acknowledged INTEGER NOT NULL DEFAULT 0,
+                    acknowledged_at TEXT
+                )
+            """)
+            self.conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_delta_batches_created
+                ON delta_batches (created_at)
             """)
 
 
@@ -372,4 +451,180 @@ class StateStore:
         if not row:
             return None
         return dict(row)
+
+    def record_catalog_scan(self, run_id: str, entries: list[CatalogEntry], complete: bool = True) -> None:
+        started_at = datetime.now(UTC).isoformat()
+        finished_at = started_at if complete else None
+        with self.conn:
+            self.conn.execute(
+                """INSERT OR REPLACE INTO catalog_scans (run_id, complete, item_count, started_at, finished_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (run_id, 1 if complete else 0, len(entries), started_at, finished_at),
+            )
+            self.conn.executemany(
+                """INSERT OR REPLACE INTO catalog_entries
+                   (run_id, vbpl_id, fingerprint, title, doc_num, doc_type, updated_date, eff_status, eff_to, raw_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (
+                        run_id,
+                        entry.vbpl_id,
+                        entry.fingerprint,
+                        entry.title,
+                        entry.doc_num,
+                        entry.doc_type,
+                        entry.updated_date,
+                        entry.eff_status,
+                        entry.eff_to,
+                        json.dumps(entry.raw_payload, ensure_ascii=False),
+                    )
+                    for entry in entries
+                ],
+            )
+
+    def latest_successful_catalog_entries(self) -> dict[str, CatalogEntry]:
+        row = self.conn.execute(
+            """SELECT run_id FROM catalog_scans
+               WHERE complete = 1
+               ORDER BY started_at DESC, run_id DESC
+               LIMIT 1"""
+        ).fetchone()
+        if not row:
+            return {}
+        latest_run_id = row["run_id"]
+        rows = self.conn.execute(
+            """SELECT vbpl_id, fingerprint, title, doc_num, doc_type, updated_date, eff_status, eff_to, raw_json
+               FROM catalog_entries
+               WHERE run_id = ?""",
+            (latest_run_id,),
+        ).fetchall()
+        result: dict[str, CatalogEntry] = {}
+        for r in rows:
+            try:
+                raw_payload = json.loads(r["raw_json"])
+            except Exception:
+                raw_payload = {}
+            result[r["vbpl_id"]] = CatalogEntry(
+                vbpl_id=r["vbpl_id"],
+                fingerprint=r["fingerprint"],
+                title=r["title"],
+                doc_num=r["doc_num"],
+                doc_type=r["doc_type"],
+                updated_date=r["updated_date"],
+                eff_status=r["eff_status"],
+                eff_to=r["eff_to"],
+                raw_payload=raw_payload,
+            )
+        return result
+
+    def update_removal_candidates(self, current_scan_ids: set[str], run_id: str) -> tuple[list[str], list[str]]:
+        known_rows = self.conn.execute(
+            """SELECT DISTINCT vbpl_id FROM catalog_entries
+               WHERE run_id IN (SELECT run_id FROM catalog_scans WHERE complete = 1)"""
+        ).fetchall()
+        all_known_ids = {r["vbpl_id"] for r in known_rows}
+        if not all_known_ids:
+            return ([], [])
+
+        candidates: list[str] = []
+        tombstones: list[str] = []
+
+        with self.conn:
+            absent_ids = all_known_ids - current_scan_ids
+            for vbpl_id in absent_ids:
+                existing = self.conn.execute(
+                    "SELECT absence_count FROM catalog_removals WHERE vbpl_id = ?",
+                    (vbpl_id,),
+                ).fetchone()
+                if not existing:
+                    self.conn.execute(
+                        """INSERT INTO catalog_removals (vbpl_id, absence_count, first_absent_run_id, last_absent_run_id, status)
+                           VALUES (?, 1, ?, ?, 'candidate')""",
+                        (vbpl_id, run_id, run_id),
+                    )
+                    candidates.append(vbpl_id)
+                else:
+                    new_count = existing["absence_count"] + 1
+                    status = "tombstone" if new_count >= 2 else "candidate"
+                    self.conn.execute(
+                        """UPDATE catalog_removals
+                           SET absence_count = ?, last_absent_run_id = ?, status = ?
+                           WHERE vbpl_id = ?""",
+                        (new_count, run_id, status, vbpl_id),
+                    )
+                    if status == "tombstone":
+                        tombstones.append(vbpl_id)
+                    else:
+                        candidates.append(vbpl_id)
+
+            for vbpl_id in current_scan_ids:
+                self.conn.execute("DELETE FROM catalog_removals WHERE vbpl_id = ?", (vbpl_id,))
+
+        return (candidates, tombstones)
+
+    def get_tombstone_ids(self) -> list[str]:
+        rows = self.conn.execute(
+            "SELECT vbpl_id FROM catalog_removals WHERE status = 'tombstone' ORDER BY vbpl_id"
+        ).fetchall()
+        return [r["vbpl_id"] for r in rows]
+
+    def record_document_version(self, vbpl_id: str, version_id: str, fingerprint: str, run_id: str) -> None:
+        created_at = datetime.now(UTC).isoformat()
+        with self.conn:
+            self.conn.execute(
+                """INSERT OR REPLACE INTO document_versions (vbpl_id, version_id, fingerprint, run_id, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (vbpl_id, version_id, fingerprint, run_id, created_at),
+            )
+
+    def record_delta_batch(self, manifest: DeltaManifest, manifest_path: str) -> None:
+        batch_id = f"batch_{manifest.release_id}"
+        with self.conn:
+            self.conn.execute(
+                """INSERT OR REPLACE INTO delta_batches
+                   (batch_id, release_id, parent_release_id, created_at, upsert_ids_json, tombstone_ids_json, manifest_path, checksum_sha256, acknowledged)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)""",
+                (
+                    batch_id,
+                    manifest.release_id,
+                    manifest.parent_release_id,
+                    manifest.created_at,
+                    json.dumps(manifest.upsert_ids),
+                    json.dumps(manifest.tombstone_ids),
+                    manifest_path,
+                    manifest.checksum_sha256,
+                ),
+            )
+
+    def pending_delta_batches(self) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            """SELECT batch_id, release_id, parent_release_id, created_at, upsert_ids_json, tombstone_ids_json, manifest_path, checksum_sha256
+               FROM delta_batches
+               WHERE acknowledged = 0
+               ORDER BY created_at ASC"""
+        ).fetchall()
+        res = []
+        for r in rows:
+            res.append({
+                "batch_id": r["batch_id"],
+                "release_id": r["release_id"],
+                "parent_release_id": r["parent_release_id"],
+                "created_at": r["created_at"],
+                "upsert_ids": json.loads(r["upsert_ids_json"]),
+                "tombstone_ids": json.loads(r["tombstone_ids_json"]),
+                "manifest_path": r["manifest_path"],
+                "checksum_sha256": r["checksum_sha256"],
+            })
+        return res
+
+    def acknowledge_delta_batch(self, batch_id: str) -> None:
+        now_iso = datetime.now(UTC).isoformat()
+        with self.conn:
+            self.conn.execute(
+                """UPDATE delta_batches
+                   SET acknowledged = 1, acknowledged_at = ?
+                   WHERE batch_id = ?""",
+                (now_iso, batch_id),
+            )
+
 
