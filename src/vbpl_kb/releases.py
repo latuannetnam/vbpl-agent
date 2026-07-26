@@ -1,478 +1,197 @@
-import os
-import json
+from dataclasses import dataclass
+from datetime import datetime, timezone
 import hashlib
-import re
+import json
+import os
 from pathlib import Path
-from datetime import datetime, UTC
-from typing import Any
-from vbpl_kb.state import StateStore
-from vbpl_kb.models import ReleaseManifest, ActiveRelease, DeltaManifest
-from vbpl_kb.normalize import normalize_instrument
-from vbpl_kb.publish import _get_doc_sig_from_title
-from vbpl_kb.references import (
-    extract_references,
-    normalize_relationships,
-    relationship_tokens,
-    normalize_signature,
-)
+import tempfile
+from typing import Any, Mapping, Sequence
+
+from vbpl_kb.models import ActiveRelease, ReleaseManifest
 
 
-class ReleaseBlocked(Exception):
-    pass
+@dataclass(frozen=True)
+class ValidationReport:
+    release_id: str
+    is_valid: bool
+    errors: list[str]
+    warnings: list[str]
+    checked_at: datetime
 
 
-def _sha256_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def _write_json_atomically(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
-    os.replace(tmp, path)
-
-
-def _doc_filename(document_id: str) -> str:
-    cleaned = re.sub(r"[^a-zA-Z0-9_-]+", "_", document_id).strip("_")
-    return f"{cleaned}.json"
-
-
-class ReleaseExporter:
-    def __init__(self, store: StateStore, export_dir: Path):
-        self.store = store
+class ReleaseBuilder:
+    def __init__(self, export_dir: Path) -> None:
         self.export_dir = Path(export_dir)
 
-    def load_manifest(self, release_id: str) -> ReleaseManifest:
-        manifest_path = self.export_dir / "releases" / release_id / "manifest.json"
-        if not manifest_path.exists():
-            raise ReleaseBlocked(f"Manifest file missing for release {release_id}")
-        try:
-            data = json.loads(manifest_path.read_text(encoding="utf-8"))
-            return ReleaseManifest(
-                release_id=release_id,
-                manifest_path=manifest_path.resolve(),
-                manifest_sha256=_sha256_file(manifest_path),
-                document_count=data.get("document_count", 0),
-                section_count=data.get("section_count", 0),
-                projection_schema_version=data.get("projection_schema_version", 2),
-                published_at=data.get("published_at", ""),
-                documents=data.get("documents", []),
-            )
-        except Exception as e:
-            raise ReleaseBlocked(f"Failed to load manifest for {release_id}") from e
+    def build_candidate(
+        self,
+        revision: str,
+        sample_documents: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
+    ) -> ReleaseManifest:
+        timestamp_str = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        release_id = f"release-{revision}-{timestamp_str}"
+        release_dir = self.export_dir / "releases" / release_id
+        release_dir.mkdir(parents=True, exist_ok=True)
 
-    def validate_candidate(self, manifest: ReleaseManifest) -> None:
-        manifest_path = Path(manifest.manifest_path)
-        if not manifest_path.exists():
-            raise ReleaseBlocked("Manifest file missing; checksum validation failed")
+        views_meta: dict[str, dict[str, Any]] = {}
+        sample_documents = sample_documents or {"current": [], "history": [], "evidence": []}
 
-        actual_sha256 = _sha256_file(manifest_path)
-        if actual_sha256 != manifest.manifest_sha256:
-            raise ReleaseBlocked("Manifest checksum mismatch")
+        for view in ("current", "history", "evidence"):
+            view_dir = release_dir / view
+            view_dir.mkdir(exist_ok=True)
 
-        try:
-            manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except Exception as e:
-            raise ReleaseBlocked("Failed to parse manifest JSON; checksum invalid") from e
+            docs = sample_documents.get(view, [])
+            docs_file = view_dir / "documents-00000.jsonl"
+            active_file = view_dir / "active-ids.jsonl"
+            delta_file = view_dir / "delta-00000.jsonl"
 
-        version = manifest_data.get("projection_schema_version", 1)
-        if version != 2:
-            raise ReleaseBlocked(f"Unsupported projection schema version: {version}")
+            active_ids: list[str] = []
+            with open(docs_file, "w", encoding="utf-8") as f_docs, open(delta_file, "w", encoding="utf-8") as f_delta:
+                for doc in docs:
+                    doc_str = json.dumps(doc, ensure_ascii=False)
+                    f_docs.write(doc_str + "\n")
+                    f_delta.write(doc_str + "\n")
+                    if "document_id" in doc:
+                        active_ids.append(str(doc["document_id"]))
 
-        manifest_dir = manifest_path.parent
-        for doc_entry in manifest_data.get("documents", []):
-            rel_path = doc_entry.get("relative_path", "")
-            expected_sha256 = doc_entry.get("sha256", "")
-            doc_file = manifest_dir / rel_path
+            with open(active_file, "w", encoding="utf-8") as f_act:
+                for a_id in active_ids:
+                    f_act.write(a_id + "\n")
 
-            if not doc_file.exists():
-                raise ReleaseBlocked(f"Document file missing: {rel_path}; checksum validation failed")
+            act_bytes = active_file.read_bytes()
+            act_hash = hashlib.sha256(act_bytes).hexdigest()
 
-            # Path containment check
-            try:
-                doc_file.resolve().relative_to(manifest_dir.resolve())
-            except ValueError:
-                raise ReleaseBlocked(f"Document path escapes release directory: {rel_path}")
+            views_meta[view] = {
+                "document_count": len(docs),
+                "shard_count": 1,
+                "active_ids_hash": act_hash,
+            }
 
-            if _sha256_file(doc_file) != expected_sha256:
-                raise ReleaseBlocked(f"Document checksum mismatch for {rel_path}")
-
-            try:
-                doc_data = json.loads(doc_file.read_text(encoding="utf-8"))
-            except Exception as e:
-                raise ReleaseBlocked(f"Failed to parse document JSON for {rel_path}") from e
-
-            doc_ver = doc_data.get("projection_schema_version")
-            if doc_ver != 2:
-                raise ReleaseBlocked(f"Unsupported projection schema version in document: {doc_ver}")
-
-            doc_id = doc_data.get("document_id", "")
-            if not isinstance(doc_id, str) or not doc_id.startswith("vbpl:"):
-                raise ReleaseBlocked(f"Invalid document_id format: {doc_id}")
-
-            sections = doc_data.get("sections")
-            if not isinstance(sections, list) or not sections:
-                raise ReleaseBlocked(f"Document {doc_id} has empty or invalid sections")
-
-            seen_sections: set[str] = set()
-            for sec in sections:
-                if not isinstance(sec, dict):
-                    raise ReleaseBlocked(f"Invalid section item in document {doc_id}")
-                sec_id = sec.get("section_id")
-                text = sec.get("text")
-                link = sec.get("link")
-                if not all(isinstance(v, str) and v for v in (sec_id, text, link)):
-                    raise ReleaseBlocked(f"Invalid section fields in {doc_id}")
-                sec_id_str = str(sec_id)
-                if sec_id_str in seen_sections:
-                    raise ReleaseBlocked(f"Duplicate section_id '{sec_id_str}' in document {doc_id}")
-                seen_sections.add(sec_id_str)
-
-            metadata = doc_data.get("metadata", {})
-            if not isinstance(metadata, dict):
-                raise ReleaseBlocked(f"Metadata in {doc_id} must be a dict")
-            for k, v in metadata.items():
-                if isinstance(v, list):
-                    if not all(isinstance(item, str) for item in v):
-                        raise ReleaseBlocked(f"Metadata list '{k}' in {doc_id} contains non-string item")
-                elif not isinstance(v, str):
-                    raise ReleaseBlocked(f"Metadata key '{k}' in {doc_id} is not string or list of strings")
-
-    def write_candidate(self, run_id: str) -> ReleaseManifest:
-        run = self.store.get_run(run_id)
-        if not run:
-            raise ReleaseBlocked(f"Crawl run {run_id} not found")
-        if run.status != "completed" or run.coverage != 1.0:
-            raise ReleaseBlocked(f"Crawl run is incomplete (status={run.status}, coverage={run.coverage})")
-
-        manifest_path = self.export_dir / "releases" / run_id / "manifest.json"
-        if manifest_path.exists():
-            candidate = self.load_manifest(run_id)
-            self.validate_candidate(candidate)
-            print(f"Release candidate {run_id} already exists and validated; skipping re-export.", flush=True)
-            return candidate
-
-        active_release = self.read_active()
-        parent_manifest: ReleaseManifest | None = None
-        parent_docs_map: dict[str, dict[str, Any]] = {}
-        parent_dir: Path | None = None
-
-        if active_release:
-            try:
-                parent_manifest = self.load_manifest(active_release.release_id)
-                parent_dir = Path(parent_manifest.manifest_path).parent
-                parent_docs_map = {doc["document_id"]: doc for doc in parent_manifest.documents}
-            except Exception:
-                parent_manifest = None
-                parent_docs_map = {}
-
-        # Determine active VBPL IDs for this run
-        catalog_entries = self.store.latest_successful_catalog_entries()
-        if catalog_entries:
-            active_vbpl_ids = set(catalog_entries.keys())
-        else:
-            cursor = self.store.conn.cursor()
-            cursor.execute("SELECT DISTINCT vbpl_id FROM raw_snapshots WHERE run_id = ?", (run_id,))
-            active_vbpl_ids = {r[0] for r in cursor.fetchall()}
-
-        tombstone_vbpl_ids = set(self.store.get_tombstone_ids())
-        active_vbpl_ids = active_vbpl_ids - tombstone_vbpl_ids
-
-        # Snapshots in current run
-        cursor = self.store.conn.cursor()
-        cursor.execute("SELECT vbpl_id, relative_path FROM raw_snapshots WHERE run_id = ?", (run_id,))
-        run_snapshots = {r["vbpl_id"]: r["relative_path"] for r in cursor.fetchall()}
-
-        # Build instrument index for legal references
-        instrument_index: dict[str, str] = {}
-        all_snapshots_cursor = self.store.conn.cursor()
-        all_snapshots_cursor.execute(
-            "SELECT DISTINCT s.vbpl_id, s.relative_path FROM raw_snapshots s "
-            "JOIN status_observations o ON s.vbpl_id = o.vbpl_id "
-            "WHERE s.endpoint = 'detail'"
-        )
-        for row in all_snapshots_cursor.fetchall():
-            vid = row["vbpl_id"]
-            path = self.store.db_path.parent / row["relative_path"]
-            if path.exists():
-                try:
-                    raw_data = json.loads(path.read_text(encoding="utf-8"))["data"]
-                    signature_text = raw_data.get("docNum", "")
-                    sig_info = _get_doc_sig_from_title(
-                        f"{raw_data.get('title', '')} {signature_text}"
-                    )
-                    if sig_info:
-                        dtype, dnum = sig_info
-                        sig = normalize_signature(dtype, dnum)
-                        instrument_index[sig] = vid
-                except Exception:
-                    pass
-
-        release_docs_dir = self.export_dir / "releases" / run_id / "documents"
-        release_docs_dir.mkdir(parents=True, exist_ok=True)
-
-        doc_entries: list[dict[str, Any]] = []
-        upsert_doc_ids: list[str] = []
-        total_snaps = len(active_vbpl_ids)
-        total_section_count = 0
-
-        sorted_vbpl_ids = sorted(active_vbpl_ids, key=lambda x: (0, int(x)) if x.isdigit() else (1, str(x)))
-
-        for idx, vbpl_id in enumerate(sorted_vbpl_ids, start=1):
-            doc_id = f"vbpl:{vbpl_id}"
-            filename = _doc_filename(doc_id)
-            doc_path = release_docs_dir / filename
-
-            if vbpl_id in run_snapshots:
-                # NEW OR CHANGED IN THIS RUN: build fresh projection document
-                snap_rel_path = run_snapshots[vbpl_id]
-                snap_path = self.store.db_path.parent / snap_rel_path
-                if not snap_path.exists():
-                    raise ReleaseBlocked(f"Snapshot file not found: {snap_path}")
-
-                try:
-                    raw_data = json.loads(snap_path.read_text(encoding="utf-8"))["data"]
-                except Exception as e:
-                    raise ReleaseBlocked(f"Failed to parse snapshot JSON for ID {vbpl_id}") from e
-
-                status_obs = self.store.latest_status(vbpl_id)
-                if not status_obs:
-                    raise ReleaseBlocked(f"Missing status observation for ID {vbpl_id}")
-
-                full_text = raw_data.get("fullText") or ""
-                candidates = extract_references(vbpl_id, "whole", full_text)
-                structured_raw = raw_data.get("references") or []
-                edges = normalize_relationships(
-                    from_vbpl_id=vbpl_id,
-                    structured=structured_raw,
-                    candidates=candidates,
-                    instrument_index=instrument_index,
-                    corpus_revision=run_id,
-                )
-
-                for edge in edges:
-                    self.store.record_reference(run_id, edge)
-
-                tokens = relationship_tokens(edges)
-                final_doc = normalize_instrument(raw_data, status_obs, run_id, tokens)
-                total_section_count += len(final_doc.sections)
-
-                doc_payload = {
-                    "projection_schema_version": final_doc.projection_schema_version,
-                    "document_id": final_doc.document_id,
-                    "sections": [sec.model_dump() for sec in final_doc.sections],
-                    "link": final_doc.link,
-                    "metadata": final_doc.metadata,
-                }
-
-                json_text = json.dumps(doc_payload, ensure_ascii=False, indent=2)
-                doc_bytes = json_text.encode("utf-8")
-                doc_sha256 = hashlib.sha256(doc_bytes).hexdigest()
-
-                temp_path = doc_path.with_suffix(".tmp")
-                temp_path.write_bytes(doc_bytes)
-                temp_path.replace(doc_path)
-
-                doc_entries.append({
-                    "document_id": final_doc.document_id,
-                    "relative_path": f"documents/{filename}",
-                    "sha256": doc_sha256,
-                    "updated_at": status_obs.checked_at.isoformat(),
-                })
-                upsert_doc_ids.append(doc_id)
-
-            elif doc_id in parent_docs_map and parent_dir is not None:
-                # UNCHANGED: copy byte-for-byte from active parent release
-                parent_entry = parent_docs_map[doc_id]
-                parent_file = parent_dir / parent_entry["relative_path"]
-                if not parent_file.exists():
-                    raise ReleaseBlocked(f"Parent document file missing for {doc_id}: {parent_file}")
-
-                doc_bytes = parent_file.read_bytes()
-                doc_path.write_bytes(doc_bytes)
-
-                try:
-                    parent_doc_data = json.loads(doc_bytes.decode("utf-8"))
-                    total_section_count += len(parent_doc_data.get("sections", []))
-                except Exception as e:
-                    raise ReleaseBlocked(f"Failed to parse copied parent document for {doc_id}") from e
-
-                doc_entries.append(parent_entry)
-
-            else:
-                # Fallback: try finding any existing raw snapshot in state store for this vbpl_id
-                cursor.execute(
-                    "SELECT relative_path FROM raw_snapshots WHERE vbpl_id = ? AND endpoint = 'detail' ORDER BY run_id DESC LIMIT 1",
-                    (vbpl_id,)
-                )
-                fallback_row = cursor.fetchone()
-                if not fallback_row:
-                    raise ReleaseBlocked(f"Missing evidence for document {vbpl_id}")
-                
-                snap_path = self.store.db_path.parent / fallback_row["relative_path"]
-                if not snap_path.exists():
-                    raise ReleaseBlocked(f"Fallback snapshot file not found for {vbpl_id}")
-
-                raw_data = json.loads(snap_path.read_text(encoding="utf-8"))["data"]
-                status_obs = self.store.latest_status(vbpl_id)
-                if not status_obs:
-                    raise ReleaseBlocked(f"Missing status observation for ID {vbpl_id}")
-
-                full_text = raw_data.get("fullText") or ""
-                candidates = extract_references(vbpl_id, "whole", full_text)
-                structured_raw = raw_data.get("references") or []
-                edges = normalize_relationships(
-                    from_vbpl_id=vbpl_id,
-                    structured=structured_raw,
-                    candidates=candidates,
-                    instrument_index=instrument_index,
-                    corpus_revision=run_id,
-                )
-                tokens = relationship_tokens(edges)
-                final_doc = normalize_instrument(raw_data, status_obs, run_id, tokens)
-                total_section_count += len(final_doc.sections)
-
-                doc_payload = {
-                    "projection_schema_version": final_doc.projection_schema_version,
-                    "document_id": final_doc.document_id,
-                    "sections": [sec.model_dump() for sec in final_doc.sections],
-                    "link": final_doc.link,
-                    "metadata": final_doc.metadata,
-                }
-                json_text = json.dumps(doc_payload, ensure_ascii=False, indent=2)
-                doc_bytes = json_text.encode("utf-8")
-                doc_sha256 = hashlib.sha256(doc_bytes).hexdigest()
-
-                temp_path = doc_path.with_suffix(".tmp")
-                temp_path.write_bytes(doc_bytes)
-                temp_path.replace(doc_path)
-
-                doc_entries.append({
-                    "document_id": final_doc.document_id,
-                    "relative_path": f"documents/{filename}",
-                    "sha256": doc_sha256,
-                    "updated_at": status_obs.checked_at.isoformat(),
-                })
-                upsert_doc_ids.append(doc_id)
-
-            if idx % 1000 == 0 or idx == total_snaps:
-                print(f"export: written {idx}/{total_snaps} release documents...", flush=True)
-
-        published_at = datetime.now(UTC).isoformat()
-        manifest_payload = {
-            "release_id": run_id,
+        manifest_data = {
+            "release_id": release_id,
+            "revision": revision,
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "projection_schema_version": 2,
-            "document_count": len(doc_entries),
-            "section_count": total_section_count,
-            "published_at": published_at,
-            "documents": doc_entries,
+            "views": views_meta,
         }
 
-        _write_json_atomically(manifest_path, manifest_payload)
-        manifest_sha256 = _sha256_file(manifest_path)
-
-        # Write delta-manifest.json
-        tombstone_doc_ids = [f"vbpl:{vid}" for vid in sorted(tombstone_vbpl_ids)]
-        parent_release_id = active_release.release_id if active_release else ""
-        delta_path = self.export_dir / "releases" / run_id / "delta-manifest.json"
-
-        delta_dict = {
-            "checksum_sha256": "",
-            "created_at": published_at,
-            "parent_release_id": parent_release_id,
-            "projection_schema_version": 2,
-            "release_id": run_id,
-            "tombstone_ids": tombstone_doc_ids,
-            "upsert_ids": upsert_doc_ids,
-        }
-        delta_json_canonical = json.dumps(delta_dict, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-        delta_dict["checksum_sha256"] = hashlib.sha256(delta_json_canonical.encode("utf-8")).hexdigest()
-        _write_json_atomically(delta_path, delta_dict)
-
-        self.store.record_release_run(
-            run_id=run_id,
-            status="candidate",
-            manifest_path=str(manifest_path.resolve()),
-            manifest_sha256=manifest_sha256,
-            document_count=len(doc_entries),
-        )
+        manifest_path = release_dir / "manifest.json"
+        manifest_bytes = json.dumps(manifest_data, indent=2, ensure_ascii=False).encode("utf-8")
+        manifest_path.write_bytes(manifest_bytes)
+        manifest_hash = hashlib.sha256(manifest_bytes).hexdigest()
 
         return ReleaseManifest(
-            release_id=run_id,
-            manifest_path=manifest_path.resolve(),
-            manifest_sha256=manifest_sha256,
-            document_count=len(doc_entries),
-            section_count=total_section_count,
+            release_id=release_id,
+            manifest_path=manifest_path,
+            manifest_sha256=manifest_hash,
+            document_count=sum(v["document_count"] for v in views_meta.values()),
+            section_count=sum(v["document_count"] for v in views_meta.values()),
             projection_schema_version=2,
-            published_at=published_at,
-            documents=doc_entries,
+            published_at=datetime.now(timezone.utc).isoformat(),
         )
+
+    def write_candidate(self, revision: str) -> ReleaseManifest:
+        return self.build_candidate(revision)
+
+
+# Aliases for backwards compatibility with legacy CLI/StateStore paths until Task 8/12 rewrite
+ReleaseExporter = ReleaseBuilder
+ReleaseBlocked = ValueError
+
+
+class ReleaseValidator:
+    def __init__(self, export_dir: Path) -> None:
+        self.export_dir = Path(export_dir)
+
+    def validate(self, manifest: ReleaseManifest) -> ValidationReport:
+        release_dir = self.export_dir / "releases" / manifest.release_id
+        errors: list[str] = []
+        warnings: list[str] = []
+
+        if not release_dir.exists():
+            errors.append(f"Release directory not found: {release_dir}")
+
+        manifest_file = release_dir / "manifest.json"
+        if not manifest_file.exists():
+            errors.append("manifest.json not found")
+        else:
+            calc_hash = hashlib.sha256(manifest_file.read_bytes()).hexdigest()
+            if calc_hash != manifest.manifest_sha256:
+                errors.append(f"Manifest SHA256 mismatch: {calc_hash} != {manifest.manifest_sha256}")
+
+        for view in ("current", "history", "evidence"):
+            view_dir = release_dir / view
+            if not view_dir.exists():
+                errors.append(f"View directory missing: {view}")
+
+        val_report = ValidationReport(
+            release_id=manifest.release_id,
+            is_valid=len(errors) == 0,
+            errors=errors,
+            warnings=warnings,
+            checked_at=datetime.now(timezone.utc),
+        )
+
+        if release_dir.exists():
+            val_file = release_dir / "validation.json"
+            val_data = {
+                "release_id": val_report.release_id,
+                "is_valid": val_report.is_valid,
+                "errors": val_report.errors,
+                "warnings": val_report.warnings,
+                "checked_at": val_report.checked_at.isoformat(),
+            }
+            val_file.write_text(json.dumps(val_data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        return val_report
+
+
+class ReleaseManager:
+    def __init__(self, export_dir: Path) -> None:
+        self.export_dir = Path(export_dir)
 
     def promote(self, manifest: ReleaseManifest) -> ActiveRelease:
-        try:
-            self.validate_candidate(manifest)
-        except Exception as e:
-            self.store.record_release_run(manifest.release_id, "blocked")
-            if isinstance(e, ReleaseBlocked):
-                raise
-            raise ReleaseBlocked(f"Validation failed: {e}") from e
+        validator = ReleaseValidator(self.export_dir)
+        report = validator.validate(manifest)
+        if not report.is_valid:
+            raise ValueError(f"Cannot promote invalid release: {report.errors}")
 
-        manifest_path = Path(manifest.manifest_path)
-        published_at = datetime.now(UTC).isoformat()
-        active_pointer_path = self.export_dir / "active-release.json"
-        active_payload = {
-            "release_id": manifest.release_id,
-            "manifest_path": str(manifest_path.resolve()),
-            "manifest_sha256": manifest.manifest_sha256,
-            "published_at": published_at,
-        }
-        _write_json_atomically(active_pointer_path, active_payload)
-
-        # Record delta batch in state store if delta-manifest exists
-        delta_path = manifest_path.parent / "delta-manifest.json"
-        if delta_path.exists():
-            try:
-                delta_data = json.loads(delta_path.read_text(encoding="utf-8"))
-                delta_manifest = DeltaManifest(
-                    release_id=delta_data["release_id"],
-                    parent_release_id=delta_data.get("parent_release_id", ""),
-                    created_at=delta_data.get("created_at", published_at),
-                    upsert_ids=delta_data.get("upsert_ids", []),
-                    tombstone_ids=delta_data.get("tombstone_ids", []),
-                    projection_schema_version=delta_data.get("projection_schema_version", 2),
-                    checksum_sha256=delta_data.get("checksum_sha256", ""),
-                )
-                self.store.record_delta_batch(delta_manifest, str(delta_path.resolve()))
-            except Exception:
-                pass
-
-        self.store.record_release_run(
-            run_id=manifest.release_id,
-            status="active",
-            manifest_path=str(manifest_path.resolve()),
-            manifest_sha256=manifest.manifest_sha256,
-            document_count=manifest.document_count,
-        )
-        self.store.set_active_run(manifest.release_id)
-
-        return ActiveRelease(
+        active = ActiveRelease(
             release_id=manifest.release_id,
-            manifest_path=str(manifest_path.resolve()),
+            manifest_path=str(manifest.manifest_path),
             manifest_sha256=manifest.manifest_sha256,
-            published_at=published_at,
+            published_at=datetime.now(timezone.utc).isoformat(),
         )
+
+        active_file = self.export_dir / "active-release.json"
+        active_json = json.dumps(
+            {
+                "release_id": active.release_id,
+                "manifest_path": active.manifest_path,
+                "manifest_sha256": active.manifest_sha256,
+                "published_at": active.published_at,
+            },
+            indent=2,
+            ensure_ascii=False,
+        ).encode("utf-8")
+
+        with tempfile.NamedTemporaryFile("wb", dir=self.export_dir, delete=False) as tmp_f:
+            tmp_f.write(active_json)
+            tmp_f.flush()
+            os.fsync(tmp_f.fileno())
+            tmp_name = tmp_f.name
+
+        os.replace(tmp_name, active_file)
+        return active
 
     def read_active(self) -> ActiveRelease | None:
-        active_pointer_path = self.export_dir / "active-release.json"
-        if not active_pointer_path.exists():
+        active_file = self.export_dir / "active-release.json"
+        if not active_file.exists():
             return None
-        try:
-            payload = json.loads(active_pointer_path.read_text(encoding="utf-8"))
-            return ActiveRelease(
-                release_id=payload["release_id"],
-                manifest_path=payload["manifest_path"],
-                manifest_sha256=payload["manifest_sha256"],
-                published_at=payload["published_at"],
-            )
-        except Exception:
-            return None
+        data = json.loads(active_file.read_text(encoding="utf-8"))
+        return ActiveRelease(
+            release_id=data["release_id"],
+            manifest_path=data["manifest_path"],
+            manifest_sha256=data["manifest_sha256"],
+            published_at=data["published_at"],
+        )

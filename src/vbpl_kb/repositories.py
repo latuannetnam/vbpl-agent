@@ -1,20 +1,24 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
-from typing import Sequence
+from typing import Any, Sequence
 import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from vbpl_kb.canonicalize import CanonicalInstrumentDraft, compute_node_id
 from vbpl_kb.db_models import (
+    AcceptanceRun,
     CatalogObservation,
     CatalogScan,
+    ConnectorDelivery,
     EvidenceDependency,
     EvidenceObject as EvidenceObjectORM,
     Instrument,
     InstrumentVersion,
     LegalNode,
+    ReleaseRun,
+    ReleaseView,
     RemovalCandidate,
 )
 from vbpl_kb.evidence import EvidenceObject
@@ -250,7 +254,6 @@ class CanonicalRepository:
         self.session.add(version)
         self.session.flush()
 
-        # Map materialized_path to generated node_id
         path_to_node_id: dict[str, str] = {}
         for draft_node in nodes:
             n_id = compute_node_id(draft.version_id, draft_node.node_type, draft_node.materialized_path)
@@ -288,3 +291,59 @@ class CanonicalRepository:
             is_new_version=True,
             node_count=len(nodes),
         )
+
+
+class ReleaseRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def mark_connector_applied(
+        self,
+        release_id: str,
+        corpus_view: str,
+        connector_name: str,
+        connector_id: int,
+        attempt_id: int,
+    ) -> None:
+        now = datetime.now(timezone.utc)
+        delivery = self.session.scalar(
+            select(ConnectorDelivery).where(
+                ConnectorDelivery.release_id == release_id,
+                ConnectorDelivery.connector_name == connector_name,
+            )
+        )
+        if not delivery:
+            delivery = ConnectorDelivery(
+                release_id=release_id,
+                corpus_view=corpus_view,
+                connector_name=connector_name,
+                connector_id=connector_id,
+                attempt_id=attempt_id,
+                status="applied",
+                applied_at=now,
+            )
+            self.session.add(delivery)
+        else:
+            delivery.attempt_id = attempt_id
+            delivery.status = "applied"
+            delivery.applied_at = now
+        self.session.flush()
+
+    def mark_accepted(
+        self,
+        release_id: str,
+        agent_profile: str,
+        report_hash: str,
+        report_data: dict[str, Any],
+    ) -> None:
+        now = datetime.now(timezone.utc)
+        run = AcceptanceRun(
+            release_id=release_id,
+            agent_profile=agent_profile,
+            report_hash=report_hash,
+            report_data=report_data,
+            status="accepted",
+            evaluated_at=now,
+        )
+        self.session.add(run)
+        self.session.flush()
