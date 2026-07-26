@@ -22,6 +22,16 @@ def test_detail_preserves_missing_status_for_canonical_fallback(settings) -> Non
     assert detail.eff_status == ""
 
 @respx.mock
+def test_get_detail_with_raw(settings, load_fixture) -> None:
+    payload = load_fixture("detail-current.json")
+    respx.get(f"{settings.vbpl_gateway_url}/doc/123").mock(
+        return_value=httpx.Response(200, json=payload)
+    )
+    raw_bytes, detail = VBPLClient(settings).get_detail_with_raw("123")
+    assert isinstance(raw_bytes, bytes)
+    assert detail.eff_status == "Còn hiệu lực"
+
+@respx.mock
 def test_client_retries_on_503(settings) -> None:
     client = VBPLClient(settings)
     route = respx.get(f"{settings.vbpl_gateway_url}/doc/123")

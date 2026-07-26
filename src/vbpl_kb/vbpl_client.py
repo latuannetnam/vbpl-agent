@@ -48,6 +48,10 @@ class VBPLClient:
         raise httpx.HTTPError("Max retries exceeded")
 
     def list_catalog_page(self, page_number: int, page_size: int) -> list[dict[str, Any]]:
+        _, docs = self.list_catalog_page_with_raw(page_number, page_size)
+        return docs
+
+    def list_catalog_page_with_raw(self, page_number: int, page_size: int) -> tuple[bytes, list[dict[str, Any]]]:
         url = f"{self.settings.vbpl_gateway_url}/doc/all"
         payload = {
             "pageNumber": page_number,
@@ -57,6 +61,7 @@ class VBPLClient:
             "sortByViewCount": True,
         }
         response = self._request_with_retry("POST", url, json=payload)
+        raw_bytes = response.content
         try:
             data = response.json()
         except ValueError as e:
@@ -71,11 +76,16 @@ class VBPLClient:
         if not isinstance(docs, list):
             raise VBPLSchemaError("'data' field is not a list")
             
-        return docs
+        return raw_bytes, docs
 
     def get_detail(self, vbpl_id: str) -> VBPLDetail:
+        _, detail = self.get_detail_with_raw(vbpl_id)
+        return detail
+
+    def get_detail_with_raw(self, vbpl_id: str) -> tuple[bytes, VBPLDetail]:
         url = f"{self.settings.vbpl_gateway_url}/doc/{vbpl_id}"
         response = self._request_with_retry("GET", url)
+        raw_bytes = response.content
         try:
             data = response.json()
         except ValueError as e:
@@ -93,7 +103,7 @@ class VBPLClient:
         eff_from = doc_data.get("effFrom")
         title = doc_data.get("title")
         eff_status = doc_data.get("effStatus")
-        return VBPLDetail(
+        detail = VBPLDetail(
             vbpl_id=str(doc_data["id"]),
             title=title if isinstance(title, str) else "",
             eff_status=eff_status.get("name", "") if isinstance(eff_status, dict) else "",
@@ -101,9 +111,14 @@ class VBPLClient:
             raw_json=response.text,
             raw_data=doc_data
         )
+        return raw_bytes, detail
 
     def get_canonical_page(self, vbpl_id: str) -> str:
+        _, text = self.get_canonical_page_with_raw(vbpl_id)
+        return text
+
+    def get_canonical_page_with_raw(self, vbpl_id: str) -> tuple[bytes, str]:
         response = self._request_with_retry(
             "GET", f"https://vbpl.vn/van-ban/chi-tiet/--{vbpl_id}"
         )
-        return response.text
+        return response.content, response.text

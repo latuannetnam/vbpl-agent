@@ -10,12 +10,17 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.types import Uuid
+
+# Cross-dialect JSON type (JSONB on PostgreSQL, JSON on SQLite)
+JSONType = JSON().with_variant(JSONB(), "postgresql")
 
 
 class Base(DeclarativeBase):
@@ -25,19 +30,19 @@ class Base(DeclarativeBase):
 class PipelineRun(Base):
     __tablename__ = "pipeline_runs"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     revision: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(64), nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    report: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    report: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONType, nullable=True)
 
 
 class CatalogScan(Base):
     __tablename__ = "catalog_scans"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    run_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("pipeline_runs.id"), nullable=True)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid(as_uuid=True), ForeignKey("pipeline_runs.id"), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(
@@ -52,8 +57,8 @@ class CatalogScan(Base):
 class CatalogObservation(Base):
     __tablename__ = "catalog_observations"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    scan_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("catalog_scans.id"), nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    scan_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("catalog_scans.id"), nullable=False)
     vbpl_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     official_source_id: Mapped[str] = mapped_column(String(128), nullable=False)
     catalog_entry_hash: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -64,10 +69,10 @@ class CatalogObservation(Base):
 class RemovalCandidate(Base):
     __tablename__ = "removal_candidates"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     vbpl_id: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
     official_source_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    first_absent_scan_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("catalog_scans.id"), nullable=False)
+    first_absent_scan_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("catalog_scans.id"), nullable=False)
     consecutive_absence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     status: Mapped[str] = mapped_column(
         String(32),
@@ -87,13 +92,13 @@ class EvidenceObject(Base):
     acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     corpus_revision: Mapped[str] = mapped_column(String(128), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
-    metadata_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    metadata_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONType, nullable=True)
 
 
 class EvidenceDependency(Base):
     __tablename__ = "evidence_dependencies"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     entity_type: Mapped[str] = mapped_column(String(64), nullable=False)
     entity_id: Mapped[str] = mapped_column(String(256), nullable=False)
     evidence_hash: Mapped[str] = mapped_column(String(64), ForeignKey("evidence_objects.hash_sha256"), nullable=False)
@@ -168,14 +173,14 @@ class AuthorityRegime(Base):
 
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     regime_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    regime_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    regime_data: Mapped[dict[str, Any]] = mapped_column(JSONType, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class AuthorityClassification(Base):
     __tablename__ = "authority_classifications"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     version_id: Mapped[str] = mapped_column(String(256), ForeignKey("instrument_versions.id"), nullable=False)
     regime_id: Mapped[str] = mapped_column(String(128), ForeignKey("authority_regimes.id"), nullable=False)
     form: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -189,28 +194,28 @@ class AuthorityClassification(Base):
 class StatusObservation(Base):
     __tablename__ = "status_observations"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     instrument_id: Mapped[str] = mapped_column(String(256), ForeignKey("instruments.id"), nullable=False)
     status: Mapped[str] = mapped_column(String(128), nullable=False)
     verification_source: Mapped[str] = mapped_column(String(128), nullable=False)
     verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     evidence_hash: Mapped[str] = mapped_column(String(64), ForeignKey("evidence_objects.hash_sha256"), nullable=False)
-    raw_payload: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    raw_payload: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONType, nullable=True)
 
 
 class ApplicabilityEnvelope(Base):
     __tablename__ = "applicability_envelopes"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     version_id: Mapped[str] = mapped_column(String(256), ForeignKey("instrument_versions.id"), nullable=False)
     node_id: Mapped[Optional[str]] = mapped_column(String(256), ForeignKey("legal_nodes.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(128), nullable=False)
     effective_from: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     effective_to: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     jurisdiction: Mapped[str] = mapped_column(String(128), nullable=False)
-    subject_tokens: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    subject_tokens: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONType, nullable=True)
     is_current_eligible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    exclusion_reasons: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    exclusion_reasons: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONType, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -247,13 +252,13 @@ class ReleaseRun(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    validation_report: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    validation_report: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONType, nullable=True)
 
 
 class ReleaseView(Base):
     __tablename__ = "release_views"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     release_id: Mapped[str] = mapped_column(String(256), ForeignKey("release_runs.id"), nullable=False)
     corpus_view: Mapped[str] = mapped_column(
         String(32),
@@ -273,7 +278,7 @@ class ReleaseView(Base):
 class ConnectorDelivery(Base):
     __tablename__ = "connector_deliveries"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     release_id: Mapped[str] = mapped_column(String(256), ForeignKey("release_runs.id"), nullable=False)
     corpus_view: Mapped[str] = mapped_column(String(32), nullable=False)
     connector_name: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -290,10 +295,10 @@ class ConnectorDelivery(Base):
 class AcceptanceRun(Base):
     __tablename__ = "acceptance_runs"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     release_id: Mapped[str] = mapped_column(String(256), ForeignKey("release_runs.id"), nullable=False)
     agent_profile: Mapped[str] = mapped_column(String(128), nullable=False)
     report_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    report_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    report_data: Mapped[dict[str, Any]] = mapped_column(JSONType, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
