@@ -11,7 +11,7 @@ data-retention rules, read the [legal-data policy](legal-data-policy.md).
 
 ## Operational boundary
 
-The pipeline uses content-addressed raw evidence (`data/evidence/sha256/`), a canonical database (`vbpl-db` / PostgreSQL), immutable multi-resolution sharded releases (`data/exports/releases/<release-id>/`), and a project-owned Onyx stack. The daily job leaves the prior active release and indexed corpus available when source validation or connector indexing fails.
+The pipeline uses content-addressed raw evidence (`data/evidence/sha256/`), a canonical database (`vbpl-db` / PostgreSQL), immutable multi-resolution sharded releases (`data/exports/releases/<release-id>/`), and a project-owned Onyx stack. The daily job performs an incremental catalog scan and requires two consecutive complete scans before tombstoning. Connector polling uses `from_beginning=False`. The daily job leaves the prior active release and indexed corpus available when source validation or connector indexing fails.
 
 ## Running CLI commands & DB migrations
 

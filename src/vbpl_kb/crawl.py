@@ -1,14 +1,11 @@
 from collections.abc import Callable
 from datetime import datetime, timezone
-import hashlib
-import json
-from typing import Any
 from sqlalchemy.orm import Session
 
+from typing import Any
 from vbpl_kb.catalog import parse_catalog_entry
-from vbpl_kb.evidence import EvidenceStore
 from vbpl_kb.models import CatalogEntry
-from vbpl_kb.repositories import CatalogRepository, EvidenceRepository
+from vbpl_kb.repositories import EvidenceRepository
 from vbpl_kb.vbpl_client import VBPLClient
 from vbpl_kb.vbpl_fallback import resolve_canonical_page
 
@@ -44,11 +41,11 @@ class DailyCrawler:
     def __init__(
         self,
         client: VBPLClient,
-        catalog: CatalogRepository,
-        evidence: EvidenceStore,
+        catalog: Any = None,
+        evidence: Any = None,
         session: Session | None = None,
         progress: ProgressReporter | None = None,
-    ):
+    ) -> None:
         self.client = client
         self.catalog = catalog
         self.evidence = evidence

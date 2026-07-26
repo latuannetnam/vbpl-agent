@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from datetime import date, datetime
 import hashlib
 from typing import Any, Mapping
-from vbpl_kb.legal_tree import LegalNodeDraft
 
 
 @dataclass(frozen=True)

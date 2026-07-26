@@ -17,8 +17,6 @@ from vbpl_kb.db_models import (
     Instrument,
     InstrumentVersion,
     LegalNode,
-    ReleaseRun,
-    ReleaseView,
     RemovalCandidate,
 )
 from vbpl_kb.evidence import EvidenceObject
@@ -124,17 +122,17 @@ class CatalogRepository:
         cleared_ids: list[int] = []
 
         for v_id in curr_ids:
-            cand = self.session.scalar(select(RemovalCandidate).where(RemovalCandidate.vbpl_id == v_id))
-            if cand and cand.status != "cleared":
-                cand.status = "cleared"
-                cand.consecutive_absence_count = 0
-                cand.updated_at = now
+            cand_obj = self.session.scalar(select(RemovalCandidate).where(RemovalCandidate.vbpl_id == v_id))
+            if cand_obj and cand_obj.status != "cleared":
+                cand_obj.status = "cleared"
+                cand_obj.consecutive_absence_count = 0
+                cand_obj.updated_at = now
                 cleared_ids.append(v_id)
 
         for v_id in absent_ids:
-            cand = self.session.scalar(select(RemovalCandidate).where(RemovalCandidate.vbpl_id == v_id))
-            if not cand:
-                cand = RemovalCandidate(
+            cand_obj = self.session.scalar(select(RemovalCandidate).where(RemovalCandidate.vbpl_id == v_id))
+            if not cand_obj:
+                new_cand = RemovalCandidate(
                     vbpl_id=v_id,
                     official_source_id=str(v_id),
                     first_absent_scan_id=scan_id,
@@ -142,12 +140,12 @@ class CatalogRepository:
                     status="candidate",
                     updated_at=now,
                 )
-                self.session.add(cand)
+                self.session.add(new_cand)
                 removal_candidate_ids.append(v_id)
-            elif cand.status == "candidate" or cand.consecutive_absence_count == 1:
-                cand.consecutive_absence_count = 2
-                cand.status = "tombstoned"
-                cand.updated_at = now
+            elif cand_obj.status == "candidate" or cand_obj.consecutive_absence_count == 1:
+                cand_obj.consecutive_absence_count = 2
+                cand_obj.status = "tombstoned"
+                cand_obj.updated_at = now
                 tombstone_ids.append(v_id)
 
         scan.status = "complete"
@@ -224,9 +222,6 @@ class CanonicalRepository:
         existing_version = self.session.get(InstrumentVersion, draft.version_id)
         if existing_version:
             self.session.flush()
-            node_count = self.session.scalar(
-                select(LegalNode).where(LegalNode.version_id == draft.version_id).with_only_columns(LegalNode.id)
-            )
             return InstrumentVersionResult(
                 instrument_id=draft.instrument_id,
                 version_id=draft.version_id,

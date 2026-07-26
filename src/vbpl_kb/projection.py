@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Iterator, Literal, Sequence
 from vbpl_kb.canonicalize import CanonicalInstrumentDraft
 from vbpl_kb.legal_semantics import (
@@ -16,7 +16,6 @@ from vbpl_kb.projection_ids import (
     build_evidence_doc_id,
     build_history_article_id,
     build_history_atomic_id,
-    build_history_relation_id,
 )
 
 CorpusView = Literal["current", "history", "evidence"]

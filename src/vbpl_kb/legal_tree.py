@@ -1,9 +1,8 @@
 from dataclasses import dataclass
-from datetime import datetime, timezone
 import hashlib
 from html.parser import HTMLParser
 import re
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Literal, Mapping
 
 NodeType = Literal["part", "chapter", "article", "clause", "point"]
 ParseStatus = Literal["verified_structured", "verified_text", "heuristic", "unparsed"]
@@ -87,8 +86,8 @@ class _VBPLHTMLTreeParser(HTMLParser):
         self.current_attrs: dict[str, str] = {}
         self.current_text: list[str] = []
 
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str]]) -> None:
-        attr_dict = dict(attrs)
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attr_dict = {k: v for k, v in attrs if v is not None}
         self.current_tag = tag
         self.current_attrs = attr_dict
 

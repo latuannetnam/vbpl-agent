@@ -49,7 +49,11 @@ indexing, retrieval, and the Chat UI.
 | Connector & Onyx integration | `infra/onyx/overlay/backend/onyx/connectors/vbpl_export/connector.py`, `scripts/verify-schema-v2-index.py` |
 | Local Onyx lifecycle | `scripts/bootstrap-onyx.ps1`, `scripts/start-onyx.ps1`, `docker-compose.vbpl.yml` |
 
-## Multi-resolution view contract
+## Multi-resolution view & connector contract
+
+The catalog scan computes a canonical metadata fingerprint for each instrument. Two consecutive successful complete catalog scans are required before a missing document becomes a confirmed tombstone. Each release publishes full shards plus a `delta-manifest.json` recording changes.
+
+`VBPLExportConnector` implements `LoadConnector`, `PollConnector`, and `SlimConnector`. Each connector instance streams documents for its configured view (`current`, `history`, `evidence`).
 
 1. **Current View**: One-section documents for active, in-force legal articles and atomic provisions. Excludes repealed/expired instruments and stale observations.
 2. **History View**: Immutable historical legal versions for point-in-time point-of-law analysis.

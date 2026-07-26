@@ -82,9 +82,12 @@ def classify_catalog_changes(
         if vbpl_id not in current:
             absent_ids.append(vbpl_id)
 
+    upsert_ids = [int(e.vbpl_id) for e in new_entries + changed_entries]
+    tombstone_ids = [int(x) for x in absent_ids if str(x).isdigit()]
+
     return CatalogChangeSet(
-        new_entries=tuple(new_entries),
-        changed_entries=tuple(changed_entries),
-        unchanged_entries=tuple(unchanged_entries),
-        absent_ids=tuple(absent_ids),
+        upsert_ids=upsert_ids,
+        removal_candidate_ids=[],
+        tombstone_ids=tombstone_ids,
+        cleared_ids=[],
     )

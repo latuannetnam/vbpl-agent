@@ -20,13 +20,13 @@ class ValidationReport:
 
 
 class ReleaseBuilder:
-    def __init__(self, export_dir: Path) -> None:
-        self.export_dir = Path(export_dir)
+    def __init__(self, export_dir: Any = None, *args: Any, **kwargs: Any) -> None:
+        self.export_dir = Path(export_dir) if export_dir is not None else Path("data/exports")
 
     def build_candidate(
         self,
         revision: str,
-        sample_documents: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
+        sample_documents: Mapping[str, Sequence[Any]] | None = None,
     ) -> ReleaseManifest:
         timestamp_str = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         release_id = f"release-{revision}-{timestamp_str}"
@@ -47,12 +47,21 @@ class ReleaseBuilder:
 
             active_ids: list[str] = []
             with open(docs_file, "w", encoding="utf-8") as f_docs, open(delta_file, "w", encoding="utf-8") as f_delta:
-                for doc in docs:
-                    doc_str = json.dumps(doc, ensure_ascii=False)
+                for doc_obj in docs:
+                    if hasattr(doc_obj, "to_dict"):
+                        doc_dict = doc_obj.to_dict()
+                    elif isinstance(doc_obj, dict):
+                        doc_dict = doc_obj
+                    else:
+                        raise TypeError(f"Unsupported document object type: {type(doc_obj)}")
+
+                    doc_str = json.dumps(doc_dict, ensure_ascii=False)
                     f_docs.write(doc_str + "\n")
                     f_delta.write(doc_str + "\n")
-                    if "document_id" in doc:
-                        active_ids.append(str(doc["document_id"]))
+
+                    d_id = doc_dict.get("document_id") or doc_dict.get("id")
+                    if d_id:
+                        active_ids.append(str(d_id))
 
             with open(active_file, "w", encoding="utf-8") as f_act:
                 for a_id in active_ids:
@@ -93,14 +102,37 @@ class ReleaseBuilder:
     def write_candidate(self, revision: str) -> ReleaseManifest:
         return self.build_candidate(revision)
 
+    def promote(self, candidate: ReleaseManifest) -> ActiveRelease:
+        return ReleaseManager(self.export_dir).promote(candidate)
 
-# Aliases for backwards compatibility with legacy CLI/StateStore paths until Task 8/12 rewrite
+    def read_active(self) -> ActiveRelease | None:
+        return ReleaseManager(self.export_dir).read_active()
+
+    def load_manifest(self, release_id: str) -> ReleaseManifest:
+        manifest_path = self.export_dir / "releases" / release_id / "manifest.json"
+        if not manifest_path.exists():
+            raise ValueError(f"Manifest not found: {manifest_path}")
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        return ReleaseManifest(
+            release_id=data["release_id"],
+            manifest_path=manifest_path,
+            manifest_sha256=hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+            document_count=sum(v.get("document_count", 0) for v in data.get("views", {}).values()),
+            section_count=sum(v.get("document_count", 0) for v in data.get("views", {}).values()),
+            projection_schema_version=data.get("projection_schema_version", 2),
+            published_at=data.get("created_at", ""),
+        )
+
+    def validate_candidate(self, candidate: ReleaseManifest) -> ValidationReport:
+        return ReleaseValidator(self.export_dir).validate(candidate)
+
+
 ReleaseExporter = ReleaseBuilder
 ReleaseBlocked = ValueError
 
 
 class ReleaseValidator:
-    def __init__(self, export_dir: Path) -> None:
+    def __init__(self, export_dir: Path | str) -> None:
         self.export_dir = Path(export_dir)
 
     def validate(self, manifest: ReleaseManifest) -> ValidationReport:
@@ -147,7 +179,7 @@ class ReleaseValidator:
 
 
 class ReleaseManager:
-    def __init__(self, export_dir: Path) -> None:
+    def __init__(self, export_dir: Path | str) -> None:
         self.export_dir = Path(export_dir)
 
     def promote(self, manifest: ReleaseManifest) -> ActiveRelease:

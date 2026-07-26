@@ -226,7 +226,7 @@ def normalize_relationships(
         )
 
     # Deduplicate
-    seen: set[tuple[str, str, str | None, str | None, str, str]] = set()
+    seen: set[tuple[str, str | None, str | None, str | None, str, str]] = set()
     unique_edges: list[LegalReference] = []
 
     for edge in edges:
