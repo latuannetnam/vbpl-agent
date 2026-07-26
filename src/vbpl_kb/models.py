@@ -127,3 +127,47 @@ class Provision(BaseModel):
     provision_heading: str
     citation_structure: Literal["parsed", "unparsed"]
     text: str
+
+
+class CatalogEntry(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    vbpl_id: str
+    title: str
+    doc_num: str | None = None
+    doc_type: str | None = None
+    updated_date: str | None = None
+    eff_status: str | None = None
+    eff_to: str | None = None
+    fingerprint: str = ""
+    raw_payload: dict[str, Any] = {}
+
+
+class CatalogChangeSet(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    new_entries: tuple[CatalogEntry, ...] = ()
+    changed_entries: tuple[CatalogEntry, ...] = ()
+    unchanged_entries: tuple[CatalogEntry, ...] = ()
+    absent_ids: tuple[str, ...] = ()
+
+    @property
+    def changed_or_new_ids(self) -> tuple[str, ...]:
+        return tuple(e.vbpl_id for e in self.new_entries) + tuple(e.vbpl_id for e in self.changed_entries)
+
+    @property
+    def has_changes(self) -> bool:
+        return bool(self.new_entries or self.changed_entries or self.absent_ids)
+
+
+class DeltaManifest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    release_id: str
+    parent_release_id: str
+    created_at: str
+    upsert_ids: list[str] = []
+    tombstone_ids: list[str] = []
+    projection_schema_version: int = 2
+    checksum_sha256: str = ""
+
