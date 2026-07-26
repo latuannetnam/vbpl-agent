@@ -6,8 +6,8 @@
 **Do not use for:** Detailed architecture contracts, legal-data policy interpretation, incident recovery, or Onyx Legal Agent configuration.
 
 This project snapshots official Vietnamese legal databases, validates and
-structures the records, publishes immutable verified releases, and makes them
-searchable through an internal Onyx Community Edition deployment. Official VBPL
+structures the records, publishes immutable verified releases with delta manifests, and makes them
+searchable through an internal Onyx Community Edition deployment using incremental connector polling. Official VBPL
 evidence remains authoritative; Onyx provides indexing, retrieval, and chat.
 
 ## Prerequisites
@@ -37,7 +37,7 @@ Optionally expose Onyx via Cloudflare Tunnel:
 .\scripts\start-cloudflare-tunnel.ps1
 ```
 
-Run the daily pipeline, inspect the active revision, and run verification:
+Run the daily incremental pipeline (scans catalog metadata fingerprints, acquires new/changed details, exports delta release, and polls connector):
 
 ```powershell
 $env:UV_CACHE_DIR="$PWD\.uv-cache"

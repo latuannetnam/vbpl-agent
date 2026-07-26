@@ -21,13 +21,16 @@ evidence. A record with missing, stale, failed, expired, suspended, conflicting,
 or unparseable status evidence is not support for a current-law conclusion. It
 may be indexed as `unknown` only after raw evidence is retained.
 
-## Releases and relationships
+## Releases, incremental sync, and relationships
 
 Do not promote a partial, schema-invalid, or checksum-invalid source release.
-Preserve the previous active export when candidate validation is blocked. Treat
-unresolved legal-effect relationships as unresolved; only explicit official
-evidence creates amendment, replacement, or repeal edges. A document reference
-alone never establishes legal effect.
+Preserve the previous active export when candidate validation is blocked. Daily
+catalog scanning computes SHA-256 metadata fingerprints; details are re-fetched
+only when fingerprints change. Document removals require two consecutive complete
+catalog scans to become confirmed tombstones; an incomplete or failing catalog run
+never generates tombstones or deletes evidence. Treat unresolved legal-effect
+relationships as unresolved; only explicit official evidence creates amendment,
+replacement, or repeal edges. A document reference alone never establishes legal effect.
 
 ## Recovery and retention
 
