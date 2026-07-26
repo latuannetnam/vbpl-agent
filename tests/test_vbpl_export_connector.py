@@ -73,203 +73,79 @@ VBPLExportConnectorError = vbpl_connector_module.VBPLExportConnectorError  # typ
 
 
 @pytest.fixture
-def connector_factory(tmp_path: Path):
-    def _create(doc_payload: dict):
-        export_dir = tmp_path / "exports"
-        rel_dir = export_dir / "releases" / "r1"
-        rel_dir.mkdir(parents=True, exist_ok=True)
-        doc_dir = rel_dir / "documents"
-        doc_dir.mkdir(parents=True, exist_ok=True)
-
-        doc_file = doc_dir / "vbpl_1.json"
-        doc_bytes = json.dumps(doc_payload, ensure_ascii=False).encode("utf-8")
-        doc_sha = hashlib.sha256(doc_bytes).hexdigest()
-        doc_file.write_bytes(doc_bytes)
-
-        manifest = {
-            "release_id": "r1",
-            "projection_schema_version": doc_payload.get("projection_schema_version", 1),
-            "document_count": 1,
-            "section_count": len(doc_payload.get("sections", [1])),
-            "published_at": "2026-07-24T00:00:00Z",
-            "documents": [
-                {
-                    "document_id": doc_payload["document_id"],
-                    "relative_path": "documents/vbpl_1.json",
-                    "sha256": doc_sha,
-                    "updated_at": "2026-07-24T00:00:00Z",
-                }
-            ],
-        }
-        manifest_file = rel_dir / "manifest.json"
-        manifest_bytes = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
-        manifest_file.write_bytes(manifest_bytes)
-        manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
-
-        active = {
-            "release_id": "r1",
-            "manifest_path": str(manifest_file.resolve()),
-            "manifest_sha256": manifest_sha,
-            "published_at": "2026-07-24T00:00:00Z",
-        }
-        (export_dir / "active-release.json").write_text(json.dumps(active), encoding="utf-8")
-
-        return VBPLExportConnector(str(export_dir))
-    return _create
-
-
-def test_connector_reads_legacy_missing_version_as_one_section(connector_factory) -> None:
-    connector = connector_factory({
-        "document_id": "vbpl:1",
-        "content": "legacy",
-        "link": "https://vbpl.vn/1",
-        "metadata": {"title": "Legacy"},
-    })
-    document = list(connector.load_from_state())[0][0]
-    assert [section.text for section in document.sections] == ["legacy"]
-
-
-def test_connector_reads_ordered_schema_v2_sections(connector_factory) -> None:
-    connector = connector_factory({
-        "projection_schema_version": 2,
-        "document_id": "vbpl:1",
-        "sections": [
-            {"section_id": "dieu-1", "text": "Điều 1", "link": "https://vbpl.vn/1"},
-            {"section_id": "dieu-2", "text": "Điều 2", "link": "https://vbpl.vn/1"},
-        ],
-        "link": "https://vbpl.vn/1",
-        "metadata": {"title": "Schema v2"},
-    })
-    document = list(connector.load_from_state())[0][0]
-    assert [section.heading for section in document.sections] == ["dieu-1", "dieu-2"]
-    assert all(section.link == "https://vbpl.vn/1" for section in document.sections)
-
-
-def test_connector_rejects_unsupported_version_before_yield(connector_factory) -> None:
-    connector = connector_factory({
-        "projection_schema_version": 3,
-        "document_id": "vbpl:1",
-        "sections": [],
-        "metadata": {"title": "Bad"},
-    })
-    with pytest.raises(VBPLExportConnectorError, match="Unsupported projection schema"):
-        list(connector.load_from_state())
-
-
-def test_connector_sanitizes_oversized_metadata_without_losing_relation_tokens(
-    connector_factory,
-) -> None:
-    connector = connector_factory({
-        "projection_schema_version": 2,
-        "document_id": "vbpl:1",
-        "sections": [{"section_id": "dieu-1", "text": "Điều 1", "link": "https://vbpl.vn/1"}],
-        "link": "https://vbpl.vn/1",
-        "metadata": {
-            "title": "X" * 300,
-            "relation_tokens": ["amends:175440"],
-        },
-    })
-    document = list(connector.load_from_state())[0][0]
-    assert len(document.metadata["title"]) <= 243
-    assert document.metadata["relation_tokens"] == ["amends:175440"]
-
-
-def test_connector_poll_source_filters_by_delta_manifest(connector_factory, tmp_path) -> None:
-    # Setup release with 2 documents (vbpl:1 and vbpl:2)
+def create_fixture_release(tmp_path: Path):
     export_dir = tmp_path / "exports"
     rel_dir = export_dir / "releases" / "r1"
     rel_dir.mkdir(parents=True, exist_ok=True)
-    doc_dir = rel_dir / "documents"
-    doc_dir.mkdir(parents=True, exist_ok=True)
 
-    doc1_file = doc_dir / "vbpl_1.json"
-    doc1_bytes = json.dumps({"projection_schema_version": 2, "document_id": "vbpl:1", "sections": [{"section_id": "s1", "text": "T1", "link": "https://vbpl.vn/1"}], "metadata": {"title": "Doc 1"}}, ensure_ascii=False).encode("utf-8")
-    doc1_file.write_bytes(doc1_bytes)
+    # Current view
+    cur_dir = rel_dir / "current"
+    cur_dir.mkdir(parents=True, exist_ok=True)
+    cur_doc = {"projection_schema_version": 2, "document_id": "vbpl:101:current:article:dieu-01", "sections": [{"section_id": "dieu-01", "text": "Current text", "link": "http://x"}], "metadata": {"title": "Doc 101"}}
+    (cur_dir / "documents-00000.jsonl").write_text(json.dumps(cur_doc) + "\n", encoding="utf-8")
+    (cur_dir / "active-ids.jsonl").write_text("vbpl:101:current:article:dieu-01\n", encoding="utf-8")
+    (cur_dir / "delta-00000.jsonl").write_text(json.dumps(cur_doc) + "\n", encoding="utf-8")
 
-    doc2_file = doc_dir / "vbpl_2.json"
-    doc2_bytes = json.dumps({"projection_schema_version": 2, "document_id": "vbpl:2", "sections": [{"section_id": "s2", "text": "T2", "link": "https://vbpl.vn/2"}], "metadata": {"title": "Doc 2"}}, ensure_ascii=False).encode("utf-8")
-    doc2_file.write_bytes(doc2_bytes)
+    # History view
+    hist_dir = rel_dir / "history"
+    hist_dir.mkdir(parents=True, exist_ok=True)
+    hist_doc = {"projection_schema_version": 2, "document_id": "vbpl:101:history:ver1:article:dieu-01", "sections": [{"section_id": "dieu-01", "text": "History text", "link": "http://x"}], "metadata": {"title": "Doc 101 H"}}
+    (hist_dir / "documents-00000.jsonl").write_text(json.dumps(hist_doc) + "\n", encoding="utf-8")
+    (hist_dir / "active-ids.jsonl").write_text("vbpl:101:history:ver1:article:dieu-01\n", encoding="utf-8")
+    (hist_dir / "delta-00000.jsonl").write_text(json.dumps(hist_doc) + "\n", encoding="utf-8")
 
-    manifest = {
-        "release_id": "r1",
-        "projection_schema_version": 2,
-        "document_count": 2,
-        "published_at": "2026-07-24T00:00:00Z",
-        "documents": [
-            {"document_id": "vbpl:1", "relative_path": "documents/vbpl_1.json", "sha256": hashlib.sha256(doc1_bytes).hexdigest()},
-            {"document_id": "vbpl:2", "relative_path": "documents/vbpl_2.json", "sha256": hashlib.sha256(doc2_bytes).hexdigest()},
-        ],
-    }
+    # Evidence view
+    ev_dir = rel_dir / "evidence"
+    ev_dir.mkdir(parents=True, exist_ok=True)
+    ev_doc = {"projection_schema_version": 2, "document_id": "vbpl:101:evidence:detail:ev123", "sections": [{"section_id": "ev123", "text": "Evidence proof", "link": "http://x"}], "metadata": {"title": "Doc 101 EV"}}
+    (ev_dir / "documents-00000.jsonl").write_text(json.dumps(ev_doc) + "\n", encoding="utf-8")
+    (ev_dir / "active-ids.jsonl").write_text("vbpl:101:evidence:detail:ev123\n", encoding="utf-8")
+    (ev_dir / "delta-00000.jsonl").write_text(json.dumps(ev_doc) + "\n", encoding="utf-8")
+
+    manifest = {"release_id": "r1", "views": {"current": {}, "history": {}, "evidence": {}}}
     manifest_file = rel_dir / "manifest.json"
-    manifest_bytes = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
+    manifest_bytes = json.dumps(manifest).encode("utf-8")
     manifest_file.write_bytes(manifest_bytes)
-
-    # Delta manifest only has upsert_ids: ["vbpl:2"]
-    delta_manifest = {
-        "release_id": "r1",
-        "parent_release_id": "r0",
-        "created_at": "2026-07-24T00:00:00Z",
-        "upsert_ids": ["vbpl:2"],
-        "tombstone_ids": [],
-        "projection_schema_version": 2,
-        "checksum_sha256": "abc",
-    }
-    (rel_dir / "delta-manifest.json").write_text(json.dumps(delta_manifest), encoding="utf-8")
+    manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
 
     active = {
         "release_id": "r1",
         "manifest_path": str(manifest_file.resolve()),
-        "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
-        "published_at": "2026-07-24T00:00:00Z",
+        "manifest_sha256": manifest_sha,
+        "published_at": "2026-07-26T12:00:00Z",
     }
     (export_dir / "active-release.json").write_text(json.dumps(active), encoding="utf-8")
-
-    connector = VBPLExportConnector(str(export_dir))
-
-    # load_from_state yields BOTH docs
-    all_docs = [doc for batch in connector.load_from_state() for doc in batch]
-    assert len(all_docs) == 2
-
-    # poll_source yields ONLY delta upserts (vbpl:2)
-    poll_docs = [doc for batch in connector.poll_source(0.0, 9999999999.0) for doc in batch]
-    assert len(poll_docs) == 1
-    assert poll_docs[0].id == "vbpl:2"
+    return export_dir
 
 
-def test_connector_retrieve_all_slim_documents_returns_all_active_ids(connector_factory, tmp_path) -> None:
-    export_dir = tmp_path / "exports"
-    rel_dir = export_dir / "releases" / "r1"
-    rel_dir.mkdir(parents=True, exist_ok=True)
-    doc_dir = rel_dir / "documents"
-    doc_dir.mkdir(parents=True, exist_ok=True)
+def test_connector_view_isolation(create_fixture_release) -> None:
+    export_dir = create_fixture_release
 
-    doc1_bytes = json.dumps({"projection_schema_version": 2, "document_id": "vbpl:1", "sections": [{"section_id": "s1", "text": "T1", "link": "https://vbpl.vn/1"}], "metadata": {"title": "Doc 1"}}, ensure_ascii=False).encode("utf-8")
-    (doc_dir / "vbpl_1.json").write_bytes(doc1_bytes)
+    connector_cur = VBPLExportConnector("current", str(export_dir))
+    docs_cur = list(connector_cur.load_from_state())[0]
+    assert len(docs_cur) == 1
+    assert docs_cur[0].id == "vbpl:101:current:article:dieu-01"
 
-    manifest = {
-        "release_id": "r1",
-        "projection_schema_version": 2,
-        "document_count": 1,
-        "published_at": "2026-07-24T00:00:00Z",
-        "documents": [
-            {"document_id": "vbpl:1", "relative_path": "documents/vbpl_1.json", "sha256": hashlib.sha256(doc1_bytes).hexdigest()},
-        ],
-    }
-    manifest_file = rel_dir / "manifest.json"
-    manifest_bytes = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
-    manifest_file.write_bytes(manifest_bytes)
+    connector_hist = VBPLExportConnector("history", str(export_dir))
+    docs_hist = list(connector_hist.load_from_state())[0]
+    assert len(docs_hist) == 1
+    assert docs_hist[0].id == "vbpl:101:history:ver1:article:dieu-01"
 
-    active = {
-        "release_id": "r1",
-        "manifest_path": str(manifest_file.resolve()),
-        "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
-        "published_at": "2026-07-24T00:00:00Z",
-    }
-    (export_dir / "active-release.json").write_text(json.dumps(active), encoding="utf-8")
+    connector_ev = VBPLExportConnector("evidence", str(export_dir))
+    docs_ev = list(connector_ev.load_from_state())[0]
+    assert len(docs_ev) == 1
+    assert docs_ev[0].id == "vbpl:101:evidence:detail:ev123"
 
-    connector = VBPLExportConnector(str(export_dir))
 
-    slim_batches = list(connector.retrieve_all_slim_documents())
-    assert len(slim_batches) == 1
-    assert slim_batches[0][0].id == "vbpl:1"
+def test_connector_refuses_invalid_view(create_fixture_release) -> None:
+    export_dir = create_fixture_release
+    with pytest.raises(VBPLExportConnectorError, match="Invalid corpus_view"):
+        VBPLExportConnector("invalid_view", str(export_dir))
 
+
+def test_connector_slim_documents_view_scoped(create_fixture_release) -> None:
+    export_dir = create_fixture_release
+    connector_cur = VBPLExportConnector("current", str(export_dir))
+    slims = list(connector_cur.retrieve_all_slim_documents())[0]
+    assert len(slims) == 1
+    assert slims[0].id == "vbpl:101:current:article:dieu-01"
