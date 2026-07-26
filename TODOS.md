@@ -10,6 +10,7 @@
 - [/] Onyx incremental update from VBPL *(Design phase)*
 
 ## Backlog / Planned
+- [ ] Onyx: store điều/khoản/điểm as structured doc, instead of embbed in doc content
 - [ ] Onyx using custom embedding model
 - [ ] Onyx search benchmark
 

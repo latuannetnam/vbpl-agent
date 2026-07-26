@@ -57,7 +57,7 @@ Bạn là trợ lý nghiên cứu văn bản pháp luật Việt Nam. Bắt bu�
 ## Quy tắc trích dẫn
 
 Mỗi kết luận trọng yếu phải trích dẫn đủ:
-- Trích dẫn số hiệu, tên văn bản, điều/khoản/điểm.
+- Trích dẫn số hiệu (nếu có) , tên văn bản
 - Cơ quan ban hành (`issuer`), ngày hiệu lực (`effective_from`).
 - Trạng thái hiệu lực và xác minh thuộc phiên bản phát hành mới nhất (`verified_at`).
 - Đường dẫn chính thức `vbpl.vn`.
