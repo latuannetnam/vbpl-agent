@@ -46,7 +46,11 @@ class VBPLExportConnector(LoadConnector, PollConnector, SlimConnector):
         except Exception as e:
             raise VBPLExportConnectorError("Failed to parse active-release.json") from e
 
-        manifest_path = Path(pointer_data.get("manifest_path", ""))
+        manifest_raw = pointer_data.get("manifest_path", "")
+        manifest_path = Path(manifest_raw)
+        if not manifest_path.is_absolute():
+            manifest_path = self.export_root / manifest_raw
+
         if not manifest_path.exists():
             manifest_path = self.export_root / "releases" / pointer_data.get("release_id", "") / "manifest.json"
 
@@ -88,10 +92,18 @@ class VBPLExportConnector(LoadConnector, PollConnector, SlimConnector):
             if isinstance(v, str) and (len(k) + len(v) > 240):
                 sanitized_metadata[k] = v[: 240 - len(k)] + "..."
             elif isinstance(v, list):
-                sanitized_metadata[k] = [
-                    item[: 240 - len(k)] + "..." if isinstance(item, str) and (len(k) + len(item) > 240) else item
-                    for item in v
-                ]
+                seen: set[Any] = set()
+                deduped: list[Any] = []
+                for item in v:
+                    if isinstance(item, str):
+                        item_str = item[: 240 - len(k)] + "..." if (len(k) + len(item) > 240) else item
+                        if item_str not in seen:
+                            seen.add(item_str)
+                            deduped.append(item_str)
+                    elif item not in seen:
+                        seen.add(item)
+                        deduped.append(item)
+                sanitized_metadata[k] = deduped
             else:
                 sanitized_metadata[k] = v
 
@@ -146,6 +158,7 @@ class VBPLExportConnector(LoadConnector, PollConnector, SlimConnector):
             return
 
         delta_shards = sorted(view_dir.glob("delta-*.jsonl"))
+        has_delta = False
         batch: list[Document] = []
         for shard in delta_shards:
             with open(shard, "r", encoding="utf-8") as f:
@@ -153,6 +166,7 @@ class VBPLExportConnector(LoadConnector, PollConnector, SlimConnector):
                     line_str = line.strip()
                     if not line_str:
                         continue
+                    has_delta = True
                     try:
                         raw_doc = json.loads(line_str)
                     except Exception as e:
@@ -166,6 +180,10 @@ class VBPLExportConnector(LoadConnector, PollConnector, SlimConnector):
 
         if batch:
             yield batch
+            return
+
+        if not has_delta:
+            yield from self.load_from_state()
 
     def retrieve_all_slim_docs(self) -> Generator[list[SlimDocument], None, None]:
         manifest_path, _ = self._read_active_manifest()
