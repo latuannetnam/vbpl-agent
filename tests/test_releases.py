@@ -119,3 +119,63 @@ def test_incomplete_run_rejects_candidate(tmp_path: Path) -> None:
     exporter = ReleaseExporter(st, tmp_path / "exports")
     with pytest.raises(ReleaseBlocked, match="incomplete"):
         exporter.write_candidate(run_id)
+
+
+def test_incremental_release_reuses_unchanged_docs_and_writes_delta_manifest(tmp_path: Path) -> None:
+    from vbpl_kb.catalog import parse_catalog_entry
+    db_path = tmp_path / "state.sqlite3"
+    st = StateStore.open(db_path)
+
+    # Run 1: initial export with doc 100 and doc 200
+    r1 = st.begin_run("run-1")
+    e100 = parse_catalog_entry({"id": "100", "title": "Doc 100"})
+    e200 = parse_catalog_entry({"id": "200", "title": "Doc 200"})
+    st.record_catalog_scan(r1, [e100, e200], complete=True)
+
+    st.record_snapshot(r1, "100", "detail", json.dumps({"data": {"id": "100", "title": "Doc 100", "fullText": "Điều 1. Text 100"}}), "hash100")
+    st.record_snapshot(r1, "200", "detail", json.dumps({"data": {"id": "200", "title": "Doc 200", "fullText": "Điều 1. Text 200"}}), "hash200")
+    st.record_status(StatusObservation(vbpl_id="100", eff_status="Còn hiệu lực", eff_from="2024-01-01", checked_at=datetime.now(UTC), content_hash="hash100", run_id=r1))
+    st.record_status(StatusObservation(vbpl_id="200", eff_status="Còn hiệu lực", eff_from="2024-01-01", checked_at=datetime.now(UTC), content_hash="hash200", run_id=r1))
+    st.finish_run(r1, "completed", 1.0)
+
+    exporter = ReleaseExporter(st, tmp_path / "exports")
+    m1 = exporter.write_candidate(r1)
+    active1 = exporter.promote(m1)
+    assert active1.release_id == "run-1"
+
+    doc100_r1_bytes = (m1.manifest_path.parent / m1.documents[0]["relative_path"]).read_bytes()
+
+    # Run 2: doc 100 unchanged (no snapshot in run-2), doc 200 updated (snapshot in run-2), doc 300 new
+    r2 = st.begin_run("run-2")
+    e200_v2 = parse_catalog_entry({"id": "200", "title": "Doc 200 Updated"})
+    e300 = parse_catalog_entry({"id": "300", "title": "Doc 300 New"})
+    st.record_catalog_scan(r2, [e100, e200_v2, e300], complete=True)
+
+    st.record_snapshot(r2, "200", "detail", json.dumps({"data": {"id": "200", "title": "Doc 200 Updated", "fullText": "Điều 1. Text 200 Updated"}}), "hash200_v2")
+    st.record_snapshot(r2, "300", "detail", json.dumps({"data": {"id": "300", "title": "Doc 300 New", "fullText": "Điều 1. Text 300"}}), "hash300")
+    st.record_status(StatusObservation(vbpl_id="100", eff_status="Còn hiệu lực", eff_from="2024-01-01", checked_at=datetime.now(UTC), content_hash="hash100", run_id=r2))
+    st.record_status(StatusObservation(vbpl_id="200", eff_status="Còn hiệu lực", eff_from="2024-01-01", checked_at=datetime.now(UTC), content_hash="hash200_v2", run_id=r2))
+    st.record_status(StatusObservation(vbpl_id="300", eff_status="Còn hiệu lực", eff_from="2024-01-01", checked_at=datetime.now(UTC), content_hash="hash300", run_id=r2))
+    st.finish_run(r2, "completed", 1.0)
+
+    m2 = exporter.write_candidate(r2)
+    active2 = exporter.promote(m2)
+    assert active2.release_id == "run-2"
+
+    # Verify doc 100 in run-2 directory is identical to run-1
+    doc100_r2_file = m2.manifest_path.parent / "documents" / "vbpl_100.json"
+    assert doc100_r2_file.exists()
+    assert doc100_r2_file.read_bytes() == doc100_r1_bytes
+
+    # Verify delta-manifest.json exists
+    delta_path = m2.manifest_path.parent / "delta-manifest.json"
+    assert delta_path.exists()
+    delta_data = json.loads(delta_path.read_text(encoding="utf-8"))
+    assert delta_data["parent_release_id"] == "run-1"
+    assert delta_data["release_id"] == "run-2"
+    assert set(delta_data["upsert_ids"]) == {"vbpl:200", "vbpl:300"}
+
+    # Verify pending delta batches in StateStore
+    pending = st.pending_delta_batches()
+    assert [p["release_id"] for p in pending] == ["run-1", "run-2"]
+

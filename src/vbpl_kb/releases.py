@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import datetime, UTC
 from typing import Any
 from vbpl_kb.state import StateStore
-from vbpl_kb.models import ReleaseManifest, ActiveRelease
+from vbpl_kb.models import ReleaseManifest, ActiveRelease, DeltaManifest
 from vbpl_kb.normalize import normalize_instrument
 from vbpl_kb.publish import _get_doc_sig_from_title
 from vbpl_kb.references import (
@@ -145,10 +145,6 @@ class ReleaseExporter:
         if run.status != "completed" or run.coverage != 1.0:
             raise ReleaseBlocked(f"Crawl run is incomplete (status={run.status}, coverage={run.coverage})")
 
-        cursor = self.store.conn.cursor()
-        cursor.execute("SELECT vbpl_id, relative_path FROM raw_snapshots WHERE run_id = ?", (run_id,))
-        snapshots = cursor.fetchall()
-
         manifest_path = self.export_dir / "releases" / run_id / "manifest.json"
         if manifest_path.exists():
             candidate = self.load_manifest(run_id)
@@ -156,14 +152,46 @@ class ReleaseExporter:
             print(f"Release candidate {run_id} already exists and validated; skipping re-export.", flush=True)
             return candidate
 
+        active_release = self.read_active()
+        parent_manifest: ReleaseManifest | None = None
+        parent_docs_map: dict[str, dict[str, Any]] = {}
+        parent_dir: Path | None = None
+
+        if active_release:
+            try:
+                parent_manifest = self.load_manifest(active_release.release_id)
+                parent_dir = Path(parent_manifest.manifest_path).parent
+                parent_docs_map = {doc["document_id"]: doc for doc in parent_manifest.documents}
+            except Exception:
+                parent_manifest = None
+                parent_docs_map = {}
+
+        # Determine active VBPL IDs for this run
+        catalog_entries = self.store.latest_successful_catalog_entries()
+        if catalog_entries:
+            active_vbpl_ids = set(catalog_entries.keys())
+        else:
+            cursor = self.store.conn.cursor()
+            cursor.execute("SELECT DISTINCT vbpl_id FROM raw_snapshots WHERE run_id = ?", (run_id,))
+            active_vbpl_ids = {r[0] for r in cursor.fetchall()}
+
+        tombstone_vbpl_ids = set(self.store.get_tombstone_ids())
+        active_vbpl_ids = active_vbpl_ids - tombstone_vbpl_ids
+
+        # Snapshots in current run
+        cursor = self.store.conn.cursor()
+        cursor.execute("SELECT vbpl_id, relative_path FROM raw_snapshots WHERE run_id = ?", (run_id,))
+        run_snapshots = {r["vbpl_id"]: r["relative_path"] for r in cursor.fetchall()}
+
+        # Build instrument index for legal references
         instrument_index: dict[str, str] = {}
-        index_cursor = self.store.conn.cursor()
-        index_cursor.execute(
+        all_snapshots_cursor = self.store.conn.cursor()
+        all_snapshots_cursor.execute(
             "SELECT DISTINCT s.vbpl_id, s.relative_path FROM raw_snapshots s "
             "JOIN status_observations o ON s.vbpl_id = o.vbpl_id "
             "WHERE s.endpoint = 'detail'"
         )
-        for row in index_cursor.fetchall():
+        for row in all_snapshots_cursor.fetchall():
             vid = row["vbpl_id"]
             path = self.store.db_path.parent / row["relative_path"]
             if path.exists():
@@ -184,67 +212,148 @@ class ReleaseExporter:
         release_docs_dir.mkdir(parents=True, exist_ok=True)
 
         doc_entries: list[dict[str, Any]] = []
-        total_snaps = len(snapshots)
+        upsert_doc_ids: list[str] = []
+        total_snaps = len(active_vbpl_ids)
         total_section_count = 0
 
-        for idx, snap in enumerate(snapshots, start=1):
-            vbpl_id = snap["vbpl_id"]
-            snap_path = self.store.db_path.parent / snap["relative_path"]
-            if not snap_path.exists():
-                raise ReleaseBlocked(f"Snapshot file not found: {snap_path}")
+        sorted_vbpl_ids = sorted(active_vbpl_ids, key=lambda x: int(x) if x.isdigit() else x)
 
-            try:
-                raw_data = json.loads(snap_path.read_text(encoding="utf-8"))["data"]
-            except Exception as e:
-                raise ReleaseBlocked(f"Failed to parse snapshot JSON for ID {vbpl_id}") from e
-
-            status_obs = self.store.latest_status(vbpl_id)
-            if not status_obs:
-                raise ReleaseBlocked(f"Missing status observation for ID {vbpl_id}")
-
-            full_text = raw_data.get("fullText") or ""
-            candidates = extract_references(vbpl_id, "whole", full_text)
-            structured_raw = raw_data.get("references") or []
-            edges = normalize_relationships(
-                from_vbpl_id=vbpl_id,
-                structured=structured_raw,
-                candidates=candidates,
-                instrument_index=instrument_index,
-                corpus_revision=run_id,
-            )
-
-            for edge in edges:
-                self.store.record_reference(run_id, edge)
-
-            tokens = relationship_tokens(edges)
-            final_doc = normalize_instrument(raw_data, status_obs, run_id, tokens)
-            total_section_count += len(final_doc.sections)
-
-            doc_payload = {
-                "projection_schema_version": final_doc.projection_schema_version,
-                "document_id": final_doc.document_id,
-                "sections": [sec.model_dump() for sec in final_doc.sections],
-                "link": final_doc.link,
-                "metadata": final_doc.metadata,
-            }
-
-            filename = _doc_filename(final_doc.document_id)
+        for idx, vbpl_id in enumerate(sorted_vbpl_ids, start=1):
+            doc_id = f"vbpl:{vbpl_id}"
+            filename = _doc_filename(doc_id)
             doc_path = release_docs_dir / filename
 
-            json_text = json.dumps(doc_payload, ensure_ascii=False, indent=2)
-            doc_bytes = json_text.encode("utf-8")
-            doc_sha256 = hashlib.sha256(doc_bytes).hexdigest()
+            if vbpl_id in run_snapshots:
+                # NEW OR CHANGED IN THIS RUN: build fresh projection document
+                snap_rel_path = run_snapshots[vbpl_id]
+                snap_path = self.store.db_path.parent / snap_rel_path
+                if not snap_path.exists():
+                    raise ReleaseBlocked(f"Snapshot file not found: {snap_path}")
 
-            temp_path = doc_path.with_suffix(".tmp")
-            temp_path.write_bytes(doc_bytes)
-            temp_path.replace(doc_path)
+                try:
+                    raw_data = json.loads(snap_path.read_text(encoding="utf-8"))["data"]
+                except Exception as e:
+                    raise ReleaseBlocked(f"Failed to parse snapshot JSON for ID {vbpl_id}") from e
 
-            doc_entries.append({
-                "document_id": final_doc.document_id,
-                "relative_path": f"documents/{filename}",
-                "sha256": doc_sha256,
-                "updated_at": status_obs.checked_at.isoformat(),
-            })
+                status_obs = self.store.latest_status(vbpl_id)
+                if not status_obs:
+                    raise ReleaseBlocked(f"Missing status observation for ID {vbpl_id}")
+
+                full_text = raw_data.get("fullText") or ""
+                candidates = extract_references(vbpl_id, "whole", full_text)
+                structured_raw = raw_data.get("references") or []
+                edges = normalize_relationships(
+                    from_vbpl_id=vbpl_id,
+                    structured=structured_raw,
+                    candidates=candidates,
+                    instrument_index=instrument_index,
+                    corpus_revision=run_id,
+                )
+
+                for edge in edges:
+                    self.store.record_reference(run_id, edge)
+
+                tokens = relationship_tokens(edges)
+                final_doc = normalize_instrument(raw_data, status_obs, run_id, tokens)
+                total_section_count += len(final_doc.sections)
+
+                doc_payload = {
+                    "projection_schema_version": final_doc.projection_schema_version,
+                    "document_id": final_doc.document_id,
+                    "sections": [sec.model_dump() for sec in final_doc.sections],
+                    "link": final_doc.link,
+                    "metadata": final_doc.metadata,
+                }
+
+                json_text = json.dumps(doc_payload, ensure_ascii=False, indent=2)
+                doc_bytes = json_text.encode("utf-8")
+                doc_sha256 = hashlib.sha256(doc_bytes).hexdigest()
+
+                temp_path = doc_path.with_suffix(".tmp")
+                temp_path.write_bytes(doc_bytes)
+                temp_path.replace(doc_path)
+
+                doc_entries.append({
+                    "document_id": final_doc.document_id,
+                    "relative_path": f"documents/{filename}",
+                    "sha256": doc_sha256,
+                    "updated_at": status_obs.checked_at.isoformat(),
+                })
+                upsert_doc_ids.append(doc_id)
+
+            elif doc_id in parent_docs_map and parent_dir is not None:
+                # UNCHANGED: copy byte-for-byte from active parent release
+                parent_entry = parent_docs_map[doc_id]
+                parent_file = parent_dir / parent_entry["relative_path"]
+                if not parent_file.exists():
+                    raise ReleaseBlocked(f"Parent document file missing for {doc_id}: {parent_file}")
+
+                doc_bytes = parent_file.read_bytes()
+                doc_path.write_bytes(doc_bytes)
+
+                try:
+                    parent_doc_data = json.loads(doc_bytes.decode("utf-8"))
+                    total_section_count += len(parent_doc_data.get("sections", []))
+                except Exception as e:
+                    raise ReleaseBlocked(f"Failed to parse copied parent document for {doc_id}") from e
+
+                doc_entries.append(parent_entry)
+
+            else:
+                # Fallback: try finding any existing raw snapshot in state store for this vbpl_id
+                cursor.execute(
+                    "SELECT relative_path FROM raw_snapshots WHERE vbpl_id = ? AND endpoint = 'detail' ORDER BY run_id DESC LIMIT 1",
+                    (vbpl_id,)
+                )
+                fallback_row = cursor.fetchone()
+                if not fallback_row:
+                    raise ReleaseBlocked(f"Missing evidence for document {vbpl_id}")
+                
+                snap_path = self.store.db_path.parent / fallback_row["relative_path"]
+                if not snap_path.exists():
+                    raise ReleaseBlocked(f"Fallback snapshot file not found for {vbpl_id}")
+
+                raw_data = json.loads(snap_path.read_text(encoding="utf-8"))["data"]
+                status_obs = self.store.latest_status(vbpl_id)
+                if not status_obs:
+                    raise ReleaseBlocked(f"Missing status observation for ID {vbpl_id}")
+
+                full_text = raw_data.get("fullText") or ""
+                candidates = extract_references(vbpl_id, "whole", full_text)
+                structured_raw = raw_data.get("references") or []
+                edges = normalize_relationships(
+                    from_vbpl_id=vbpl_id,
+                    structured=structured_raw,
+                    candidates=candidates,
+                    instrument_index=instrument_index,
+                    corpus_revision=run_id,
+                )
+                tokens = relationship_tokens(edges)
+                final_doc = normalize_instrument(raw_data, status_obs, run_id, tokens)
+                total_section_count += len(final_doc.sections)
+
+                doc_payload = {
+                    "projection_schema_version": final_doc.projection_schema_version,
+                    "document_id": final_doc.document_id,
+                    "sections": [sec.model_dump() for sec in final_doc.sections],
+                    "link": final_doc.link,
+                    "metadata": final_doc.metadata,
+                }
+                json_text = json.dumps(doc_payload, ensure_ascii=False, indent=2)
+                doc_bytes = json_text.encode("utf-8")
+                doc_sha256 = hashlib.sha256(doc_bytes).hexdigest()
+
+                temp_path = doc_path.with_suffix(".tmp")
+                temp_path.write_bytes(doc_bytes)
+                temp_path.replace(doc_path)
+
+                doc_entries.append({
+                    "document_id": final_doc.document_id,
+                    "relative_path": f"documents/{filename}",
+                    "sha256": doc_sha256,
+                    "updated_at": status_obs.checked_at.isoformat(),
+                })
+                upsert_doc_ids.append(doc_id)
 
             if idx % 1000 == 0 or idx == total_snaps:
                 print(f"export: written {idx}/{total_snaps} release documents...", flush=True)
@@ -261,6 +370,24 @@ class ReleaseExporter:
 
         _write_json_atomically(manifest_path, manifest_payload)
         manifest_sha256 = _sha256_file(manifest_path)
+
+        # Write delta-manifest.json
+        tombstone_doc_ids = [f"vbpl:{vid}" for vid in sorted(tombstone_vbpl_ids)]
+        parent_release_id = active_release.release_id if active_release else ""
+        delta_path = self.export_dir / "releases" / run_id / "delta-manifest.json"
+
+        delta_dict = {
+            "checksum_sha256": "",
+            "created_at": published_at,
+            "parent_release_id": parent_release_id,
+            "projection_schema_version": 2,
+            "release_id": run_id,
+            "tombstone_ids": tombstone_doc_ids,
+            "upsert_ids": upsert_doc_ids,
+        }
+        delta_json_canonical = json.dumps(delta_dict, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        delta_dict["checksum_sha256"] = hashlib.sha256(delta_json_canonical.encode("utf-8")).hexdigest()
+        _write_json_atomically(delta_path, delta_dict)
 
         self.store.record_release_run(
             run_id=run_id,
@@ -300,6 +427,24 @@ class ReleaseExporter:
             "published_at": published_at,
         }
         _write_json_atomically(active_pointer_path, active_payload)
+
+        # Record delta batch in state store if delta-manifest exists
+        delta_path = manifest_path.parent / "delta-manifest.json"
+        if delta_path.exists():
+            try:
+                delta_data = json.loads(delta_path.read_text(encoding="utf-8"))
+                delta_manifest = DeltaManifest(
+                    release_id=delta_data["release_id"],
+                    parent_release_id=delta_data.get("parent_release_id", ""),
+                    created_at=delta_data.get("created_at", published_at),
+                    upsert_ids=delta_data.get("upsert_ids", []),
+                    tombstone_ids=delta_data.get("tombstone_ids", []),
+                    projection_schema_version=delta_data.get("projection_schema_version", 2),
+                    checksum_sha256=delta_data.get("checksum_sha256", ""),
+                )
+                self.store.record_delta_batch(delta_manifest, str(delta_path.resolve()))
+            except Exception:
+                pass
 
         self.store.record_release_run(
             run_id=manifest.release_id,
