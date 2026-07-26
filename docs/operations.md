@@ -74,11 +74,7 @@ The pipeline does not expose public ports. Its data persists in the
 
 ## Daily outcome and safe failure handling
 
-`run-daily` resumes the persisted crawl, validates a candidate release, promotes
-only a complete checksummed export, and requests connector indexing. A blocked
-candidate leaves the active-release pointer unchanged. A connector failure
-preserves the previously indexed corpus; record the failure, correct the cause,
-and retry without deleting state, raw snapshots, volumes, or the connector.
+`run-daily` performs an incremental catalog scan, fetching details only for new or changed documents. It requires two consecutive complete scans before declaring a missing document a tombstone. It validates and promotes a self-contained full release candidate plus a delta batch, and triggers connector delta polling with `from_beginning=False`. A blocked candidate leaves the active-release pointer unchanged. A connector failure preserves the previously indexed corpus; pending delta batches are retried automatically on subsequent runs without deleting state, raw snapshots, volumes, or the connector. Explicit full re-indexing using `scripts/reset-and-reindex-onyx.py` is reserved for index schema or normalizer compatibility upgrades.
 
 ## Project-owned local Onyx
 

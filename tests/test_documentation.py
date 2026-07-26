@@ -93,3 +93,17 @@ def test_current_docs_route_hierarchy_work_without_historical_links() -> None:
     assert "docs/architecture.md" in agents
     assert "docs/superpowers/specs/" not in agents
     assert "docs/superpowers/plans/" not in agents
+
+
+def test_documentation_describes_incremental_catalog_sync_and_delta_lifecycle() -> None:
+    arch = (ROOT / "docs/architecture.md").read_text(encoding="utf-8")
+    ops = (ROOT / "docs/operations.md").read_text(encoding="utf-8")
+
+    assert "canonical metadata fingerprint" in arch
+    assert "Two consecutive successful complete catalog scans" in arch
+    assert "delta-manifest.json" in arch
+    assert "SlimConnector" in arch
+
+    assert "incremental catalog scan" in ops
+    assert "two consecutive complete scans" in ops
+    assert "from_beginning=False" in ops

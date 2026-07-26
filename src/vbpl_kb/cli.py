@@ -67,12 +67,32 @@ def run_daily(
     store = StateStore.open(path)
     client = VBPLClient(settings)
     
+    # 1. Retry any unacknowledged pending delta batches first
+    if settings.onyx_connector_id is not None:
+        pending_batches = store.pending_delta_batches()
+        if pending_batches:
+            try:
+                connector_client = OnyxConnectorClient(settings)
+                for batch in pending_batches:
+                    typer.echo(f"Retrying pending delta batch {batch['batch_id']}...")
+                    connector_client.trigger(settings.onyx_connector_id, from_beginning=False)
+                    connector_client.wait_for_indexed(settings.onyx_connector_id, settings.onyx_connector_timeout_seconds)
+                    store.acknowledge_delta_batch(batch["batch_id"])
+                    typer.echo(f"Pending delta batch {batch['batch_id']} delivered and acknowledged.")
+            except ConnectorControlError as e:
+                typer.echo(f"Daily pipeline blocked on pending delta delivery step: {e}")
+                raise typer.Exit(code=1)
+
     rev = revision or get_default_revision()
     crawler = DailyCrawler(client, store, progress=typer.echo)
     typer.echo(f"Running daily crawl for revision {rev}...")
     crawl_summary = crawler.run(rev)
     typer.echo(f"Crawl finished. Coverage: {crawl_summary.coverage:.2f}")
-    
+
+    if not crawl_summary.catalog_complete or len(crawl_summary.failed_ids) > 0:
+        typer.echo(f"Daily pipeline stopped: crawl incomplete or failed (failed={len(crawl_summary.failed_ids)}).")
+        raise typer.Exit(code=1)
+
     exporter = ReleaseExporter(store, settings.export_dir)
     try:
         typer.echo(f"Writing release candidate for {rev}...")
@@ -85,16 +105,24 @@ def run_daily(
         raise typer.Exit(code=1)
 
     if settings.onyx_connector_id is not None:
-        try:
-            connector_client = OnyxConnectorClient(settings)
-            typer.echo(f"Triggering Onyx connector ID {settings.onyx_connector_id}...")
-            connector_client.trigger(settings.onyx_connector_id)
-            typer.echo("Waiting for Onyx connector indexing...")
-            connector_client.wait_for_indexed(settings.onyx_connector_id, settings.onyx_connector_timeout_seconds)
-            typer.echo("Onyx connector indexing completed.")
-        except ConnectorControlError as e:
-            typer.echo(f"Daily pipeline blocked on connector step: {e}")
-            raise typer.Exit(code=1)
+        pending_batches = store.pending_delta_batches()
+        if pending_batches:
+            try:
+                connector_client = OnyxConnectorClient(settings)
+                for batch in pending_batches:
+                    if batch["upsert_ids"] or batch["tombstone_ids"]:
+                        typer.echo(f"Triggering Onyx connector ID {settings.onyx_connector_id} for delta batch {batch['batch_id']}...")
+                        connector_client.trigger(settings.onyx_connector_id, from_beginning=False)
+                        typer.echo("Waiting for Onyx connector indexing...")
+                        connector_client.wait_for_indexed(settings.onyx_connector_id, settings.onyx_connector_timeout_seconds)
+                        store.acknowledge_delta_batch(batch["batch_id"])
+                        typer.echo(f"Delta batch {batch['batch_id']} delivered to Onyx and acknowledged.")
+                    else:
+                        store.acknowledge_delta_batch(batch["batch_id"])
+                        typer.echo(f"Delta batch {batch['batch_id']} has no changes; acknowledged.")
+            except ConnectorControlError as e:
+                typer.echo(f"Daily pipeline blocked on connector step: {e}")
+                raise typer.Exit(code=1)
 
     typer.echo("Daily pipeline completed successfully.")
 

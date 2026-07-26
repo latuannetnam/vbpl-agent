@@ -47,22 +47,14 @@ documents. Onyx owns chunking, embedding, indexing, retrieval, and the Chat UI.
 | Onyx custom connector and frontend overlay | `infra/onyx/overlay/` |
 | Local Onyx lifecycle | `scripts/bootstrap-onyx.ps1`, `scripts/start-onyx.ps1`, `infra/onyx/docker-compose.vbpl-*.yml` |
 
-## Release and connector contract
+## Release, connector, and incremental sync contract
 
-The pipeline writes a candidate release beneath an immutable revision directory,
-validates coverage and checksums, then atomically updates
-`active-release.json`. The connector reads only the pointed-to active release
-through `/app/vbpl-export`; it never reads candidate or temporary paths. A
-connector failure preserves the existing index and is retried without deleting
-or recreating the connector.
+The pipeline enumerates the complete official VBPL catalog page-by-page and computes a canonical metadata fingerprint per document. Only newly observed or materially changed fingerprints trigger a detail fetch and normalized-document update. Two consecutive successful complete catalog scans are required before a missing document becomes a confirmed tombstone; an incomplete or failing catalog scan produces no tombstones.
 
-`VBPLExportConnector` implementations must yield `list[Document]` batches from
-`poll_source()` and `load_from_state()` using `self.batch_size`. Export
-connectors yield every document in the complete promoted manifest and do not
-discard records with `changed_after`. The backend, background worker, and web
-frontend overlay must be updated together when a custom source changes;
-`scripts/bootstrap-onyx.ps1` builds `api_server`, `background`, and
-`web_server`.
+The pipeline writes candidate releases beneath immutable revision directories, validates coverage, schemas, and checksums, and updates `active-release.json`. Each promoted release publishes an immutable full manifest plus a separate `delta-manifest.json` recording upsert document IDs and tombstone IDs.
+
+`VBPLExportConnector` implements `LoadConnector`, `PollConnector`, and `SlimConnector`. `load_from_state()` streams the full active release. `poll_source()` reads promoted delta manifests for incremental upserts. `retrieve_all_slim_documents()` returns all active document IDs from the active full release, allowing Onyx to prune confirmed tombstones during indexing.
+The backend, background worker, and web frontend overlay must be updated together when a custom source changes; `scripts/bootstrap-onyx.ps1` builds `api_server`, `background`, and `web_server`.
 
 ## Dependency rules
 

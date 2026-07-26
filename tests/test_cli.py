@@ -82,7 +82,7 @@ def test_run_daily_streams_component_progress(runner, tmp_path, monkeypatch) -> 
         def run(self, revision):
             self.progress("crawl: catalog page 1 discovered; documents=1")
             self.progress("crawl: completed; documents=1/1 (failed=0)")
-            return SimpleNamespace(coverage=1.0)
+            return SimpleNamespace(coverage=1.0, catalog_complete=True, failed_ids=[])
 
     class FakeReleaseExporter:
         def __init__(self, store, export_dir):
@@ -98,8 +98,12 @@ def test_run_daily_streams_component_progress(runner, tmp_path, monkeypatch) -> 
         export_dir = tmp_path / "exports"
         onyx_connector_id = None
 
+    class FakeStore:
+        def pending_delta_batches(self):
+            return []
+
     monkeypatch.setattr("vbpl_kb.cli.Settings", lambda: FakeSettings())
-    monkeypatch.setattr("vbpl_kb.cli.StateStore.open", lambda path: object())
+    monkeypatch.setattr("vbpl_kb.cli.StateStore.open", lambda path: FakeStore())
     monkeypatch.setattr("vbpl_kb.cli.VBPLClient", lambda settings: object())
     monkeypatch.setattr("vbpl_kb.cli.DailyCrawler", FakeCrawler)
     monkeypatch.setattr("vbpl_kb.cli.ReleaseExporter", FakeReleaseExporter)
@@ -109,4 +113,65 @@ def test_run_daily_streams_component_progress(runner, tmp_path, monkeypatch) -> 
     assert result.exit_code == 0
     assert "crawl: catalog page 1 discovered; documents=1" in result.output
     assert "Export release" in result.output
+
+
+def test_run_daily_retries_pending_delta_batch(runner, tmp_path, monkeypatch) -> None:
+    acknowledged = []
+    triggered = []
+
+    class FakeStore:
+        def pending_delta_batches(self):
+            if "batch-1" in acknowledged:
+                return []
+            return [{
+                "batch_id": "batch-1",
+                "release_id": "rel-1",
+                "upsert_ids": ["vbpl:1"],
+                "tombstone_ids": [],
+            }]
+
+        def acknowledge_delta_batch(self, batch_id):
+            acknowledged.append(batch_id)
+
+    class FakeConnectorClient:
+        def __init__(self, settings):
+            pass
+        def trigger(self, connector_id, from_beginning=True):
+            triggered.append((connector_id, from_beginning))
+            return "attempt-1"
+        def wait_for_indexed(self, connector_id, timeout):
+            pass
+
+    class FakeCrawler:
+        def __init__(self, client, store, progress):
+            pass
+        def run(self, revision):
+            return SimpleNamespace(coverage=1.0, catalog_complete=True, failed_ids=[])
+
+    class FakeReleaseExporter:
+        def __init__(self, store, export_dir):
+            pass
+        def write_candidate(self, revision):
+            return SimpleNamespace(release_id=revision)
+        def promote(self, candidate):
+            return SimpleNamespace(release_id=candidate.release_id)
+
+    class FakeSettings:
+        export_dir = tmp_path / "exports"
+        onyx_connector_id = "conn-123"
+        onyx_connector_timeout_seconds = 30
+
+    monkeypatch.setattr("vbpl_kb.cli.Settings", lambda: FakeSettings())
+    monkeypatch.setattr("vbpl_kb.cli.StateStore.open", lambda path: FakeStore())
+    monkeypatch.setattr("vbpl_kb.cli.VBPLClient", lambda settings: object())
+    monkeypatch.setattr("vbpl_kb.cli.OnyxConnectorClient", FakeConnectorClient)
+    monkeypatch.setattr("vbpl_kb.cli.DailyCrawler", FakeCrawler)
+    monkeypatch.setattr("vbpl_kb.cli.ReleaseExporter", FakeReleaseExporter)
+
+    result = runner.invoke(app, ["run-daily", "--db-path", str(tmp_path / "state.sqlite3")])
+
+    assert result.exit_code == 0
+    assert "batch-1" in acknowledged
+    assert ("conn-123", False) in triggered
+
 
