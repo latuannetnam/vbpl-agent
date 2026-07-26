@@ -1,16 +1,61 @@
 services:
+  vbpl-db:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vbpl}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vbpl}
+      POSTGRES_DB: ${POSTGRES_DB:-vbpl}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vbpl} -d ${POSTGRES_DB:-vbpl}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  vbpl-migrate:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.pipeline
+    image: vbpl-kb-pipeline:latest
+    restart: "no"
+    command: ["migrate"]
+    depends_on:
+      vbpl-db:
+        condition: service_healthy
+    environment:
+      - VBPL_KB_DATABASE_URL=${VBPL_KB_DATABASE_URL:-postgresql+psycopg://vbpl:vbpl@vbpl-db:5432/vbpl}
+
+  vbpl-test:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.pipeline
+    image: vbpl-kb-pipeline:latest
+    profiles:
+      - test
+    depends_on:
+      vbpl-db:
+        condition: service_healthy
+    environment:
+      - VBPL_KB_DATABASE_URL=${VBPL_KB_DATABASE_TEST_URL:-postgresql+psycopg://vbpl:vbpl@vbpl-db:5432/vbpl_test}
+    entrypoint: ["uv", "run", "pytest"]
+
   vbpl-pipeline:
     build:
       context: .
       dockerfile: docker/Dockerfile.pipeline
     image: vbpl-kb-pipeline:latest
     restart: "no"
-    command: ["run-daily", "--db-path", "/app/data/state.sqlite3"]
+    depends_on:
+      vbpl-migrate:
+        condition: service_completed_successfully
+    command: ["run-daily"]
     volumes:
       - vbpl-pipeline-data:/app/data
       - ${VBPL_EXPORT_HOST_PATH:-./data/exports}:/app/data/exports
     environment:
+      - VBPL_KB_DATABASE_URL=${VBPL_KB_DATABASE_URL:-postgresql+psycopg://vbpl:vbpl@vbpl-db:5432/vbpl}
       - VBPL_KB_DATA_DIR=/app/data
+      - VBPL_KB_EVIDENCE_DIR=/app/data/evidence
       - VBPL_KB_EXPORT_DIR=${VBPL_KB_EXPORT_DIR:-/app/data/exports}
       - VBPL_KB_VBPL_GATEWAY_URL=https://vbpl-bientap-gateway.moj.gov.vn/api/qtdc/public
       - VBPL_KB_ONYX_BASE_URL=${VBPL_KB_ONYX_BASE_URL:-http://api_server:8080}
@@ -24,6 +69,9 @@ services:
 
 volumes:
   vbpl-pipeline-data:
+  vbpl-postgres-data:
+  vbpl-evidence-data:
+  vbpl-export-data:
 
 networks:
   onyx:

@@ -6,5 +6,5 @@ def test_compose_uses_persistent_internal_volume() -> None:
     text = path.read_text(encoding="utf-8")
     assert "vbpl-pipeline-data:/app/data" in text
     assert 'restart: "no"' in text
-    assert 'command: ["run-daily", "--db-path", "/app/data/state.sqlite3"]' in text
+    assert 'command: ["run-daily"]' in text
     assert "VBPL_KB_ONYX_REQUEST_TIMEOUT_SECONDS=${VBPL_KB_ONYX_REQUEST_TIMEOUT_SECONDS:-120}" in text

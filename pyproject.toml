@@ -10,6 +10,9 @@ dependencies = [
     "pydantic-settings>=2.14.2",
     "rich>=15.0.0",
     "typer>=0.27.0",
+    "alembic>=1.16,<2",
+    "psycopg[binary]>=3.2,<4",
+    "sqlalchemy>=2.0,<3",
 ]
 
 [project.scripts]
@@ -25,6 +28,9 @@ dev = [
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+markers = [
+    "postgres: marks tests requiring live PostgreSQL instance",
+]
 
 [tool.uv]
 package = true
