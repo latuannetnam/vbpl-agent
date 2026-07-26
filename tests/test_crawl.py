@@ -16,7 +16,21 @@ class FakeVBPLClient:
         if page_number in self.fail_catalog_pages:
             raise RuntimeError(f"catalog page {page_number} failed")
         if page_number <= len(self.catalog_pages):
-            return [{"id": int(i)} for i in self.catalog_pages[page_number - 1]]
+            res = []
+            for i in self.catalog_pages[page_number - 1]:
+                if isinstance(i, dict):
+                    res.append(i)
+                else:
+                    res.append({
+                        "id": int(i),
+                        "title": f"Document {i}",
+                        "docNum": f"{i}/2026/NĐ-CP",
+                        "docType": "Nghị định",
+                        "updatedDate": "2026-07-01",
+                        "effStatus": {"name": "Còn hiệu lực"},
+                        "effTo": None,
+                    })
+            return res
         return []
 
     def get_detail(self, vbpl_id: str):
@@ -142,3 +156,49 @@ def test_catalog_checkpoint_resumes_after_the_last_saved_page(fake_client, store
     assert second.catalog_complete is True
     assert second.detail_count == 2
     assert fake_client.catalog_calls == [2, 3]
+
+
+def test_incremental_crawl_only_fetches_new_or_changed_details(fake_client, store) -> None:
+    # Run 1: docs 1 and 2 with explicit catalog fields
+    doc1 = {"id": 1, "title": "Document 1", "docNum": "1/2026", "effStatus": "Còn hiệu lực"}
+    doc2 = {"id": 2, "title": "Document 2 Original", "docNum": "2/2026", "effStatus": "Còn hiệu lực"}
+    fake_client.catalog_pages = [[doc1, doc2]]
+    summary1 = DailyCrawler(fake_client, store).run("run-1")
+    assert summary1.catalog_complete is True
+    assert summary1.detail_count == 2
+    assert summary1.fetched_detail_count == 2
+
+    # Track detail calls for run 2
+    fetched_ids = []
+    original_get_detail = fake_client.get_detail
+    def spy_get_detail(vbpl_id):
+        fetched_ids.append(vbpl_id)
+        return original_get_detail(vbpl_id)
+    fake_client.get_detail = spy_get_detail
+
+    # Run 2: doc 1 unchanged, doc 2 changed title, doc 3 is new
+    doc2_changed = {"id": 2, "title": "Document 2 Updated Title", "docNum": "2/2026", "effStatus": "Còn hiệu lực"}
+    doc3_new = {"id": 3, "title": "Document 3 New", "docNum": "3/2026", "effStatus": "Còn hiệu lực"}
+
+    fake_client.catalog_pages = [[doc1, doc2_changed, doc3_new]]
+
+    summary2 = DailyCrawler(fake_client, store).run("run-2")
+    assert summary2.catalog_complete is True
+    assert summary2.detail_count == 3
+    assert summary2.fetched_detail_count == 2
+    assert set(fetched_ids) == {"2", "3"}  # 1 was unchanged and not re-fetched!
+
+
+def test_incomplete_scan_produces_no_tombstones(fake_client, store) -> None:
+    # Run 1: baseline has 1, 2
+    fake_client.catalog_pages = [["1", "2"]]
+    summary1 = DailyCrawler(fake_client, store).run("run-1")
+    assert summary1.catalog_complete is True
+
+    # Run 2: catalog fails on page 1
+    fake_client.fail_catalog_pages = {1}
+    summary2 = DailyCrawler(fake_client, store).run("run-2")
+    assert summary2.catalog_complete is False
+    assert summary2.tombstone_ids == []
+    assert store.get_tombstone_ids() == []
+
