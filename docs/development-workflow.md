@@ -13,7 +13,7 @@ before editing:
 | Change | Read first | Likely locations |
 | --- | --- | --- |
 | Crawl, schemas, normalization, status, or references | [Legal-data policy](legal-data-policy.md), [architecture](architecture.md) | `src/vbpl_kb/`, `tests/` |
-| Exports, release promotion, or connector input | [Legal-data policy](legal-data-policy.md), [architecture](architecture.md) | `publish.py`, `releases.py`, `state.py` |
+| Exports, release promotion, or connector input | [Legal-data policy](legal-data-policy.md), [architecture](architecture.md) | `publish.py`, `releases.py`, `repositories.py` |
 | Connector, overlay, Compose, or bootstrap | [Architecture](architecture.md), [operations](operations.md) | `infra/onyx/`, `scripts/`, Compose files |
 | Daily execution, Docker, incident, or recovery | [Operations](operations.md) | `scripts/`, Compose files |
 | Onyx Legal Agent UI configuration | [Onyx agent setup](onyx-agent-setup.md) | Runtime administration only |

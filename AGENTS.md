@@ -18,7 +18,7 @@ only.
 | Task | Read first | Main locations |
 | --- | --- | --- |
 | Crawl, schema, normalization, authority hierarchy, legal status, or references | [Legal-data policy](docs/legal-data-policy.md), [architecture](docs/architecture.md) | `src/vbpl_kb/`, `tests/` |
-| Export, release promotion, or connector input | [Legal-data policy](docs/legal-data-policy.md), [architecture](docs/architecture.md) | `publish.py`, `releases.py`, `state.py` |
+| Export, release promotion, or connector input | [Legal-data policy](docs/legal-data-policy.md), [architecture](docs/architecture.md) | `publish.py`, `releases.py`, `repositories.py` |
 | Onyx connector, overlay, Compose, or bootstrap | [Architecture](docs/architecture.md), [operations](docs/operations.md) | `infra/onyx/`, `scripts/`, Compose files |
 | Daily execution, Docker, incident, or recovery | [Operations](docs/operations.md) | `scripts/`, Compose files |
 | Onyx Legal Agent UI configuration | [Onyx agent setup](docs/onyx-agent-setup.md) | Runtime administration only |

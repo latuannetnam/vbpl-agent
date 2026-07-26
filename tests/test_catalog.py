@@ -1,10 +1,8 @@
-import os
-from unittest.mock import MagicMock
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from vbpl_kb.db_models import Base, CatalogScan, RemovalCandidate
+from vbpl_kb.db_models import Base
 from vbpl_kb.models import CatalogEntry
 from vbpl_kb.repositories import CatalogRepository
 

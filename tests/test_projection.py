@@ -3,7 +3,6 @@ import pytest
 from vbpl_kb.projection import (
     CanonicalBundle,
     project_current,
-    project_history,
     project_evidence,
 )
 from vbpl_kb.canonicalize import CanonicalInstrumentDraft

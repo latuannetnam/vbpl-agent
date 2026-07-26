@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 import pytest
 from vbpl_kb.evidence import EvidenceStore, InvalidEvidenceHashError
 

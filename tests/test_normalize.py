@@ -31,7 +31,7 @@ def test_projection_contains_citable_provenance(raw_instrument, status) -> None:
     assert document.document_id == "vbpl:123"
     assert document.projection_schema_version == 2
     assert "Trạng thái: Còn hiệu lực" in document.content
-    assert "Vị trí: dieu-8" in document.content
+    assert "Vị trí: dieu-08" in document.content
     assert document.metadata["verified_at"] == "2026-07-21T00:00:00+00:00"
 
 
@@ -39,7 +39,7 @@ def test_unparsed_citation_structure(status) -> None:
     raw = {"id": 123, "title": "X", "fullText": "Không có điều khoản nào rõ ràng."}
     doc = normalize_instrument(raw, status, "vbpl-2026-07-21")
     assert doc.metadata["citation_structure"] == "unparsed"
-    assert doc.sections[0].section_id == "toan-van"
+    assert doc.sections[0].section_id == "dieu-00"
     assert "Không có điều khoản nào rõ ràng." in doc.content
 
 
@@ -47,7 +47,7 @@ def test_empty_full_text_creates_fallback_section(status) -> None:
     raw = {"id": 10001, "title": "Văn bản chưa có nội dung text", "fullText": ""}
     doc = normalize_instrument(raw, status, "vbpl-2026-07-21")
     assert len(doc.sections) == 1
-    assert doc.sections[0].section_id == "toan-van"
+    assert doc.sections[0].section_id == "dieu-00"
     assert "Văn bản chưa có nội dung text" in doc.content
 
 
@@ -77,7 +77,7 @@ def test_projection_uses_real_vbpl_html_content_and_citable_subheadings(status) 
 
     doc = normalize_instrument(raw, status, "vbpl-2026-07-21")
 
-    assert doc.sections[0].section_id == "dieu-1"
+    assert doc.sections[0].section_id == "dieu-01"
     assert "Nội dung điểm a." in doc.content
     assert doc.link.endswith("--187835")
 
@@ -91,6 +91,6 @@ def test_normalize_instrument_emits_verified_status_and_article_headings() -> No
         "vbpl-2026-07-22",
     )
     assert doc.document_id == "vbpl:123"
-    assert doc.sections[0].section_id == "dieu-1"
+    assert doc.sections[0].section_id == "dieu-01"
     assert doc.metadata["legal_status_normalized"] == "Còn hiệu lực"
     assert doc.metadata["verified_at"] == "2026-07-22T00:00:00+00:00"

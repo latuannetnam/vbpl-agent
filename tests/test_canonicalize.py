@@ -4,8 +4,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from vbpl_kb.canonicalize import canonicalize_instrument, CanonicalInstrumentDraft
-from vbpl_kb.db_models import Base, Instrument, InstrumentVersion, LegalNode
+from vbpl_kb.canonicalize import canonicalize_instrument
+from vbpl_kb.db_models import Base
 from vbpl_kb.evidence import EvidenceStore
 from vbpl_kb.legal_tree import parse_legal_tree, LegalNodeDraft
 from vbpl_kb.repositories import CanonicalRepository, EvidenceRepository

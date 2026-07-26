@@ -1,11 +1,9 @@
 from pathlib import Path
-import pytest
 
 from vbpl_kb.releases import (
     ReleaseBuilder,
     ReleaseValidator,
     ReleaseManager,
-    ValidationReport,
 )
 
 

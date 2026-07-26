@@ -7,7 +7,7 @@ from typing import Any
 from vbpl_kb.models import StatusObservation, OnyxDocument, OnyxSection, Provision
 from vbpl_kb.authority import classify_authority, AuthorityClassification
 from vbpl_kb.applicability import build_applicability, ApplicabilityEnvelope
-from vbpl_kb.provisions import split_provisions
+from vbpl_kb.legal_tree import parse_legal_tree
 
 
 class _HTMLText(HTMLParser):
@@ -114,14 +114,21 @@ def normalize_instrument(
 
     authority = classify_authority(doc_type, issuer)
     applicability = build_applicability(raw, status, authority, revision)
-    parsed_provisions = split_provisions(full_text)
+    parsed_nodes = parse_legal_tree(raw, full_text.encode("utf-8"))
 
     canonical_link = f"https://vbpl.vn/van-ban/chi-tiet/{_slug(title)}--{vbpl_id}"
 
     sections: list[OnyxSection] = []
     citation_structures: set[str] = set()
 
-    for prov in parsed_provisions:
+    for node in parsed_nodes:
+        prov = Provision(
+            provision_key=node.materialized_path,
+            text=node.text,
+            heading=node.heading,
+            provision_heading=node.heading or node.display_label,
+            citation_structure=node.parse_status,
+        )
         citation_structures.add(prov.citation_structure)
         header = render_context_header(
             title=title,

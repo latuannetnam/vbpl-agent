@@ -1,13 +1,9 @@
 from datetime import datetime, timezone
-import pytest
 
 from vbpl_kb.legal_semantics import (
     classify_authority,
-    build_applicability,
     is_current_eligible,
     resolve_relations,
-    EligibilityDecision,
-    LegalRelationDraft,
 )
 
 

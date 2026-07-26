@@ -2,7 +2,6 @@ import json
 import re
 from collections.abc import Callable
 from typing import Any
-from vbpl_kb.state import StateStore
 from vbpl_kb.onyx import OnyxIngestionClient
 from vbpl_kb.models import OnyxDocument, LegalReference, StatusObservation
 from vbpl_kb.normalize import normalize_instrument
@@ -28,7 +27,7 @@ def build_projection(
     status: StatusObservation,
     revision: str,
     references: list[LegalReference] | None = None,
-    store: StateStore | None = None,
+    store: Any = None,
 ) -> OnyxDocument:
     return normalize_instrument(raw, status, revision)
 
@@ -51,7 +50,7 @@ def _get_doc_sig_from_title(title: str) -> tuple[str, str] | None:
 class Publisher:
     def __init__(
         self,
-        store: StateStore,
+        store: Any,
         onyx: OnyxIngestionClient,
         progress: ProgressReporter | None = None,
     ):

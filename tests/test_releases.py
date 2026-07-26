@@ -1,14 +1,11 @@
-import json
 from pathlib import Path
 import pytest
-from datetime import datetime, timezone
 
-from vbpl_kb.models import ActiveRelease, ReleaseManifest
+from vbpl_kb.models import ReleaseManifest
 from vbpl_kb.releases import (
     ReleaseBuilder,
     ReleaseValidator,
     ReleaseManager,
-    ValidationReport,
 )
 
 

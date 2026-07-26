@@ -3,11 +3,11 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from vbpl_kb.crawl import DailyCrawler, CrawlSummary
+from vbpl_kb.crawl import DailyCrawler
 from vbpl_kb.evidence import EvidenceStore
 from vbpl_kb.db_models import Base
 from vbpl_kb.repositories import CatalogRepository
-from vbpl_kb.vbpl_client import VBPLClient, VBPLDetail
+from vbpl_kb.vbpl_client import VBPLDetail
 
 
 @pytest.fixture
