@@ -1,0 +1,21 @@
+{
+  "regime_id": "2025-07-01",
+  "regime_version": "2025.1",
+  "groups": [
+    {"order": 1, "name": "Hiến pháp", "forms": ["Hiến pháp"]},
+    {"order": 2, "name": "Bộ luật, Luật, Nghị quyết của Quốc hội", "forms": ["Bộ luật", "Luật", "Nghị quyết"], "issuers": ["Quốc hội"]},
+    {"order": 3, "name": "Pháp lệnh, Nghị quyết của Ủy ban Thường vụ Quốc hội", "forms": ["Pháp lệnh", "Nghị quyết"], "issuers": ["Ủy ban Thường vụ Quốc hội"]},
+    {"order": 4, "name": "Lệnh, Quyết định của Chủ tịch nước", "forms": ["Lệnh", "Quyết định"], "issuers": ["Chủ tịch nước"]},
+    {"order": 5, "name": "Nghị định của Chính phủ", "forms": ["Nghị định"], "issuers": ["Chính phủ"]},
+    {"order": 6, "name": "Quyết định của Thủ tướng Chính phủ", "forms": ["Quyết định"], "issuers": ["Thủ tướng Chính phủ"]},
+    {"order": 7, "name": "Thông tư của Bộ trưởng, Thủ trưởng cơ quan ngang Bộ", "forms": ["Thông tư"]},
+    {"order": 8, "name": "Nghị quyết của HĐND cấp tỉnh", "forms": ["Nghị quyết"], "issuers": ["Hội đồng nhân dân tỉnh", "HĐND cấp tỉnh"]},
+    {"order": 9, "name": "Quyết định của UBND cấp tỉnh", "forms": ["Quyết định"], "issuers": ["Ủy ban nhân dân tỉnh", "UBND cấp tỉnh"]},
+    {"order": 10, "name": "Nghị quyết của HĐND cấp huyện", "forms": ["Nghị quyết"], "issuers": ["Hội đồng nhân dân huyện", "HĐND cấp huyện"]},
+    {"order": 11, "name": "Quyết định của UBND cấp huyện", "forms": ["Quyết định"], "issuers": ["Ủy ban nhân dân huyện", "UBND cấp huyện"]},
+    {"order": 12, "name": "Nghị quyết của HĐND cấp xã", "forms": ["Nghị quyết"], "issuers": ["Hội đồng nhân dân xã", "HĐND cấp xã"]},
+    {"order": 13, "name": "Quyết định của UBND cấp xã", "forms": ["Quyết định"], "issuers": ["Ủy ban nhân dân xã", "UBND cấp xã"]},
+    {"order": 14, "name": "Văn bản quy phạm pháp luật đơn vị hành chính - kinh tế đặc biệt", "forms": ["Nghị quyết", "Quyết định"], "issuers": ["Đơn vị hành chính - kinh tế đặc biệt"]},
+    {"order": 15, "name": "Văn bản khác", "forms": ["Khác"]}
+  ]
+}
