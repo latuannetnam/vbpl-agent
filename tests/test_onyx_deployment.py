@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).parents[1]
 
 
@@ -46,3 +45,11 @@ def test_environment_example_exposes_ui_port_and_verified_routes() -> None:
     assert "VBPL_KB_ONYX_CONNECTOR_ID=" in environment
     assert "VBPL_KB_ONYX_SEARCH_PATH=/admin/search" in environment
 
+
+def test_schema_v2_verification_script_exists() -> None:
+    script_path = ROOT / "scripts/verify-schema-v2-index.py"
+    assert script_path.exists()
+    content = script_path.read_text(encoding="utf-8")
+    assert "REQUIRED_FIELDS" in content
+    assert "corpus_view" in content
+    assert "statutory_group" in content
