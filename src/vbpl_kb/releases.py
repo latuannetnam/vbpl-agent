@@ -216,7 +216,7 @@ class ReleaseExporter:
         total_snaps = len(active_vbpl_ids)
         total_section_count = 0
 
-        sorted_vbpl_ids = sorted(active_vbpl_ids, key=lambda x: int(x) if x.isdigit() else x)
+        sorted_vbpl_ids = sorted(active_vbpl_ids, key=lambda x: (0, int(x)) if x.isdigit() else (1, str(x)))
 
         for idx, vbpl_id in enumerate(sorted_vbpl_ids, start=1):
             doc_id = f"vbpl:{vbpl_id}"
