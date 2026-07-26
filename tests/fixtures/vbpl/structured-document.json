@@ -1,0 +1,11 @@
+{
+  "data": {
+    "id": 12345,
+    "title": "Luật Quản lý thuế",
+    "docNum": "38/2019/QH14",
+    "issueDate": "2019-06-13",
+    "effDate": "2020-07-01",
+    "effStatus": {"name": "Còn hiệu lực"},
+    "fullText": "<div class='fulltext'><h2>Phần II: NỘI DUNG</h2><h3>Chương III: KHÊU KHAI THUẾ</h3><h4>Điều 12. Hồ sơ khai thuế</h4><p>1. Hồ sơ khai thuế bao gồm các tài liệu sau:</p><p>a) Tờ khai thuế;</p><p>b) Bảng kê chứng từ.</p></div>"
+  }
+}

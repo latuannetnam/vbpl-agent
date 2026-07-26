@@ -6,14 +6,19 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from vbpl_kb.canonicalize import CanonicalInstrumentDraft, compute_node_id
 from vbpl_kb.db_models import (
     CatalogObservation,
     CatalogScan,
     EvidenceDependency,
     EvidenceObject as EvidenceObjectORM,
+    Instrument,
+    InstrumentVersion,
+    LegalNode,
     RemovalCandidate,
 )
 from vbpl_kb.evidence import EvidenceObject
+from vbpl_kb.legal_tree import LegalNodeDraft
 from vbpl_kb.models import CatalogEntry
 
 
@@ -23,6 +28,14 @@ class CatalogChangeSet:
     removal_candidate_ids: list[int]
     tombstone_ids: list[int]
     cleared_ids: list[int]
+
+
+@dataclass(frozen=True)
+class InstrumentVersionResult:
+    instrument_id: str
+    version_id: str
+    is_new_version: bool
+    node_count: int
 
 
 class CatalogRepository:
@@ -78,7 +91,7 @@ class CatalogRepository:
         for entry in entries:
             v_id = int(entry.vbpl_id)
             curr_entries_by_id[v_id] = entry
-            # Hash entry fields
+
             h = hashlib.sha256(
                 f"{entry.vbpl_id}:{entry.title}:{entry.doc_num}:{entry.doc_type}:{entry.eff_status}".encode()
             ).hexdigest()
@@ -100,7 +113,7 @@ class CatalogRepository:
             if prev_h is None or prev_h != h:
                 upsert_ids.append(v_id)
 
-        # Determine absent IDs (present in previous baseline or existing pending candidates, but missing now)
+        # Determine absent IDs
         prev_ids = set(prev_observations.keys())
         curr_ids = set(curr_entry_hashes.keys())
         absent_ids = (prev_ids - curr_ids)
@@ -114,7 +127,6 @@ class CatalogRepository:
         tombstone_ids: list[int] = []
         cleared_ids: list[int] = []
 
-        # Handle cleared candidates (reappeared)
         for v_id in curr_ids:
             cand = self.session.scalar(select(RemovalCandidate).where(RemovalCandidate.vbpl_id == v_id))
             if cand and cand.status != "cleared":
@@ -123,7 +135,6 @@ class CatalogRepository:
                 cand.updated_at = now
                 cleared_ids.append(v_id)
 
-        # Handle absent candidates (two-scan rule)
         for v_id in absent_ids:
             cand = self.session.scalar(select(RemovalCandidate).where(RemovalCandidate.vbpl_id == v_id))
             if not cand:
@@ -182,3 +193,98 @@ class EvidenceRepository:
         )
         self.session.add(dep)
         self.session.flush()
+
+
+class CanonicalRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def upsert_observation(
+        self, draft: CanonicalInstrumentDraft, nodes: Sequence[LegalNodeDraft]
+    ) -> InstrumentVersionResult:
+        now = datetime.now(timezone.utc)
+        instrument = self.session.get(Instrument, draft.instrument_id)
+        if not instrument:
+            instrument = Instrument(
+                id=draft.instrument_id,
+                official_source_id=draft.official_source_id,
+                title=draft.title,
+                number=draft.number,
+                issue_date=draft.issue_date,
+                effective_date=draft.effective_date,
+                current_status=draft.current_status,
+                first_observed_at=now,
+                last_observed_at=now,
+            )
+            self.session.add(instrument)
+        else:
+            instrument.title = draft.title
+            instrument.number = draft.number
+            instrument.issue_date = draft.issue_date
+            instrument.effective_date = draft.effective_date
+            instrument.current_status = draft.current_status
+            instrument.last_observed_at = now
+
+        existing_version = self.session.get(InstrumentVersion, draft.version_id)
+        if existing_version:
+            self.session.flush()
+            node_count = self.session.scalar(
+                select(LegalNode).where(LegalNode.version_id == draft.version_id).with_only_columns(LegalNode.id)
+            )
+            return InstrumentVersionResult(
+                instrument_id=draft.instrument_id,
+                version_id=draft.version_id,
+                is_new_version=False,
+                node_count=len(nodes),
+            )
+
+        # Create new immutable version
+        version = InstrumentVersion(
+            id=draft.version_id,
+            instrument_id=draft.instrument_id,
+            detail_payload_hash=draft.detail_payload_hash,
+            normalized_content_hash=draft.normalized_content_hash,
+            raw_evidence_hash=draft.raw_evidence_hash,
+            created_at=now,
+        )
+        self.session.add(version)
+        self.session.flush()
+
+        # Map materialized_path to generated node_id
+        path_to_node_id: dict[str, str] = {}
+        for draft_node in nodes:
+            n_id = compute_node_id(draft.version_id, draft_node.node_type, draft_node.materialized_path)
+            path_to_node_id[draft_node.materialized_path] = n_id
+
+        for draft_node in nodes:
+            n_id = path_to_node_id[draft_node.materialized_path]
+            parent_path = "/".join(draft_node.materialized_path.split("/")[:-1])
+            parent_id = path_to_node_id.get(parent_path)
+
+            node_orm = LegalNode(
+                id=n_id,
+                version_id=draft.version_id,
+                parent_node_id=parent_id,
+                node_type=draft_node.node_type,
+                display_label=draft_node.display_label,
+                normalized_coordinate=draft_node.normalized_coordinate,
+                heading=draft_node.heading,
+                sibling_ordinal=draft_node.sibling_ordinal,
+                materialized_path=draft_node.materialized_path,
+                text=draft_node.text,
+                lead_in_text=draft_node.lead_in_text,
+                source_anchor=draft_node.source_anchor,
+                source_start=draft_node.source_start,
+                source_end=draft_node.source_end,
+                content_hash=draft_node.content_hash,
+                parse_status=draft_node.parse_status,
+            )
+            self.session.add(node_orm)
+
+        self.session.flush()
+        return InstrumentVersionResult(
+            instrument_id=draft.instrument_id,
+            version_id=draft.version_id,
+            is_new_version=True,
+            node_count=len(nodes),
+        )

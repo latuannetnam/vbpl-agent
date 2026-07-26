@@ -1,54 +1,31 @@
-from datetime import datetime, UTC
-from vbpl_kb.provisions import split_provisions
-from vbpl_kb.models import StatusObservation
-from vbpl_kb.normalize import normalize_instrument
+from vbpl_kb.legal_tree import parse_legal_tree
 
 
-def test_split_provisions_is_ordered_and_preserves_nested_amended_text() -> None:
-    sections = split_provisions(
-        "Điều 1. Sửa đổi\n"
-        "1. Sửa đổi Điều 4 như sau:\n"
-        "“Điều 4. Hệ thống văn bản\n"
-        "1. Hiến pháp.\n"
-        "2. Bộ luật, luật.\n"
-        "Điều 2. Thi hành\n"
-        "Nội dung."
+def test_parse_legal_tree_is_ordered_and_preserves_nested_structure() -> None:
+    html_text = (
+        "<div class='content'>"
+        "<h2>Phần I. QUY ĐỊNH CHUNG</h2>"
+        "<h3>Chương I. ĐIỀU KHOẢN CHUNG</h3>"
+        "<h4>Điều 1. Phạm vi điều chỉnh</h4>"
+        "<p>1. Luật này quy định về quản lý thuế.</p>"
+        "<p>a) Thuế giá trị gia tăng;</p>"
+        "<p>b) Thuế thu nhập doanh nghiệp.</p>"
+        "<h4>Điều 2. Đối tượng áp dụng</h4>"
+        "<p>Nội dung áp dụng.</p>"
+        "</div>"
     )
-    assert [section.provision_key for section in sections] == [
-        "dieu-1",
-        "dieu-1/khoan-1",
-        "dieu-1/khoan-1/noi-dung-sua-doi/dieu-4",
-        "dieu-1/khoan-1/noi-dung-sua-doi/dieu-4/khoan-1",
-        "dieu-1/khoan-1/noi-dung-sua-doi/dieu-4/khoan-2",
-        "dieu-2",
+    raw_html = html_text.encode("utf-8")
+    detail_data = {"id": 1001, "title": "Luật Quản lý thuế"}
+
+    nodes = parse_legal_tree(detail_data, raw_html)
+    paths = [n.materialized_path for n in nodes]
+
+    assert paths == [
+        "phan-01",
+        "phan-01/chuong-01",
+        "phan-01/chuong-01/dieu-01",
+        "phan-01/chuong-01/dieu-01/khoan-01",
+        "phan-01/chuong-01/dieu-01/khoan-01/diem-a",
+        "phan-01/chuong-01/dieu-01/khoan-01/diem-b",
+        "phan-01/chuong-01/dieu-02",
     ]
-
-
-def test_each_retrievable_section_repeats_compact_legal_context() -> None:
-    status = StatusObservation(
-        vbpl_id="178717",
-        eff_status="Còn hiệu lực",
-        eff_from="2025-07-01T00:00:00",
-        checked_at=datetime(2026, 7, 24, 8, 0, 0, tzinfo=UTC),
-        content_hash="a" * 64,
-        run_id="vbpl-2026-07-24",
-        status_source="api",
-    )
-    doc = normalize_instrument(
-        {
-            "id": "178717",
-            "docType": {"name": "Luật", "parentCode": "VBQPPL"},
-            "docNum": "87/2025/QH15",
-            "title": "Luật 87/2025/QH15",
-            "agencyName": "Quốc hội",
-            "fullText": "Điều 1. Nội dung\n1. Khoản một.",
-            "effFrom": "2025-07-01T00:00:00",
-        },
-        status,
-        "vbpl-2026-07-24",
-    )
-    assert doc.projection_schema_version == 2
-    assert doc.sections[1].section_id == "dieu-1/khoan-1"
-    assert "Văn bản: Luật 87/2025/QH15" in doc.sections[1].text
-    assert "Thẩm quyền Điều 4: 2" in doc.sections[1].text
-    assert f"Xác minh: {status.checked_at.isoformat()}" in doc.sections[1].text
