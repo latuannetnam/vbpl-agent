@@ -4,8 +4,8 @@ from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any, Generator
 
-from onyx.connectors.interfaces import LoadConnector, PollConnector
-from onyx.connectors.models import Document, TextSection, DocumentSource
+from onyx.connectors.interfaces import LoadConnector, PollConnector, SlimConnector
+from onyx.connectors.models import Document, TextSection, DocumentSource, SlimDocument
 from onyx.configs.app_configs import INDEX_BATCH_SIZE
 
 
@@ -55,7 +55,7 @@ def _text_sections(raw_doc: dict[str, Any]) -> list[TextSection]:
     return sections
 
 
-class VBPLExportConnector(LoadConnector, PollConnector):
+class VBPLExportConnector(LoadConnector, PollConnector, SlimConnector):
     def __init__(self, export_root: str = "/app/vbpl-export", batch_size: int = INDEX_BATCH_SIZE) -> None:
         self.export_root = Path(export_root)
         self.batch_size = batch_size
@@ -91,7 +91,11 @@ class VBPLExportConnector(LoadConnector, PollConnector):
 
         return manifest_path, manifest_data
 
-    def _documents(self, changed_after: datetime | None = None) -> Generator[list[Document], None, None]:
+    def _documents(
+        self,
+        changed_after: datetime | None = None,
+        filter_doc_ids: set[str] | None = None,
+    ) -> Generator[list[Document], None, None]:
         manifest_path, manifest_data = self._read_active_manifest()
         manifest_dir = manifest_path.parent
 
@@ -99,6 +103,10 @@ class VBPLExportConnector(LoadConnector, PollConnector):
         validated_raw_docs: list[tuple[dict[str, Any], dict[str, Any]]] = []
 
         for doc_entry in doc_entries:
+            doc_id = doc_entry.get("document_id", "")
+            if filter_doc_ids is not None and doc_id not in filter_doc_ids:
+                continue
+
             rel_path = doc_entry.get("relative_path", "")
             doc_file = manifest_dir / rel_path
             if not doc_file.exists():
@@ -165,4 +173,30 @@ class VBPLExportConnector(LoadConnector, PollConnector):
         yield from self._documents(changed_after=None)
 
     def poll_source(self, start: float, end: float) -> Generator[list[Document], None, None]:
+        manifest_path, _ = self._read_active_manifest()
+        delta_path = manifest_path.parent / "delta-manifest.json"
+        if delta_path.exists():
+            try:
+                delta_data = json.loads(delta_path.read_text(encoding="utf-8"))
+                upsert_ids = set(delta_data.get("upsert_ids", []))
+                if not upsert_ids:
+                    return
+                yield from self._documents(changed_after=None, filter_doc_ids=upsert_ids)
+                return
+            except Exception as e:
+                raise VBPLExportConnectorError("Failed to parse delta-manifest.json") from e
         yield from self._documents(changed_after=datetime.fromtimestamp(start, UTC))
+
+    def retrieve_all_slim_documents(self) -> Generator[list[SlimDocument], None, None]:
+        _, manifest_data = self._read_active_manifest()
+        doc_entries = manifest_data.get("documents", [])
+        batch: list[SlimDocument] = []
+        for doc_entry in doc_entries:
+            doc_id = doc_entry.get("document_id")
+            if doc_id:
+                batch.append(SlimDocument(id=str(doc_id)))
+                if len(batch) >= self.batch_size:
+                    yield batch
+                    batch = []
+        if batch:
+            yield batch

@@ -2,11 +2,10 @@ import json
 from pathlib import Path
 
 
-def test_connector_patch_registers_ce_source_without_pruning() -> None:
+def test_connector_patch_registers_ce_source() -> None:
     patch = Path("infra/onyx/patches/vbpl-export-connector.patch").read_text(encoding="utf-8")
     assert 'VBPL_EXPORT = "vbpl_export"' in patch
     assert "VBPLExportConnector" in patch
-    assert "SlimConnector" not in patch
 
 
 def test_lock_file_specifies_pinned_onyx_ce_revision() -> None:
@@ -18,11 +17,13 @@ def test_lock_file_specifies_pinned_onyx_ce_revision() -> None:
     assert len(lock_data["revision"]) == 40
 
 
-def test_overlay_connector_implements_vbpl_export() -> None:
+def test_overlay_connector_implements_vbpl_export_and_slim_pruning() -> None:
     connector_file = Path("infra/onyx/overlay/backend/onyx/connectors/vbpl_export/connector.py")
     assert connector_file.exists()
     content = connector_file.read_text(encoding="utf-8")
     assert "class VBPLExportConnector" in content
+    assert "SlimConnector" in content
+    assert "retrieve_all_slim_documents" in content
     assert "active-release.json" in content
 
 
