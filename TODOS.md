@@ -6,9 +6,10 @@
 - [x] AGENTS.md: remind to update after each incremental code changes
 
 ## In Progress / Planning
-- [/] Onyx incremental update from VBPL *(Planning)*
+- [/] docs/onyx-agent-instruction.md *(Optimizing)* 
+- [/] Onyx incremental update from VBPL *(Design phase)*
 
 ## Backlog / Planned
 - [ ] Onyx using custom embedding model
 - [ ] Onyx search benchmark
-- [ ] docs/onyx-agent-instruction.md: quy định cụ thể về hierarchical legacy
+
