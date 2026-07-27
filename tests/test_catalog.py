@@ -58,3 +58,14 @@ def test_catalog_repository_two_scan_removal(memory_session) -> None:
     ]
     changes5 = repo.complete_scan(scan5_id, entries5)
     assert changes5.cleared_ids == [102]
+
+
+def test_catalog_repository_handles_uuid_vbpl_id(memory_session) -> None:
+    repo = CatalogRepository(memory_session)
+    scan_id = repo.begin_scan()
+    entries = [
+        CatalogEntry(vbpl_id="7f147190-5009-11f1-a1c0-795b56a45f32", title="UUID Doc"),
+        CatalogEntry(vbpl_id="101", title="Doc 101"),
+    ]
+    changes = repo.complete_scan(scan_id, entries)
+    assert len(changes.upsert_ids) == 2

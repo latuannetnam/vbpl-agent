@@ -21,7 +21,7 @@ from vbpl_kb.db_models import (
 )
 from vbpl_kb.evidence import EvidenceObject
 from vbpl_kb.legal_tree import LegalNodeDraft
-from vbpl_kb.models import CatalogEntry, CatalogChangeSet
+from vbpl_kb.catalog import parse_vbpl_id_int, CatalogEntry, CatalogChangeSet
 
 
 @dataclass(frozen=True)
@@ -83,7 +83,7 @@ class CatalogRepository:
         curr_entry_hashes: dict[int, str] = {}
 
         for entry in entries:
-            v_id = int(entry.vbpl_id)
+            v_id = parse_vbpl_id_int(entry.vbpl_id)
             curr_entries_by_id[v_id] = entry
 
             h = hashlib.sha256(

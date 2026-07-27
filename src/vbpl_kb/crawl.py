@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from typing import Any
-from vbpl_kb.catalog import parse_catalog_entry
+from vbpl_kb.catalog import parse_catalog_entry, parse_vbpl_id_int
 from vbpl_kb.models import CatalogEntry
 from vbpl_kb.repositories import EvidenceRepository
 from vbpl_kb.vbpl_client import VBPLClient
@@ -112,6 +112,7 @@ class DailyCrawler:
                 catalog_complete=False,
             )
 
+        entries_by_id = {parse_vbpl_id_int(e.vbpl_id): str(e.vbpl_id) for e in current_entries}
         # Complete scan & compute change set
         change_set = self.catalog.complete_scan(scan_id, current_entries)
         target_ids = change_set.upsert_ids
@@ -121,7 +122,7 @@ class DailyCrawler:
 
         # Fetch detail for changed or new documents
         for processed_count, vbpl_id_int in enumerate(target_ids, start=1):
-            vbpl_id = str(vbpl_id_int)
+            vbpl_id = entries_by_id.get(vbpl_id_int, str(vbpl_id_int))
             try:
                 raw_bytes, detail = self.client.get_detail_with_raw(vbpl_id)
                 detail_url = f"{getattr(self.client.settings, 'vbpl_gateway_url', 'https://vbpl-bientap-gateway.moj.gov.vn/api/qtdc/public')}/doc/{vbpl_id}"

@@ -59,6 +59,13 @@ def parse_catalog_entry(payload: dict[str, Any]) -> CatalogEntry:
     )
 
 
+def parse_vbpl_id_int(vbpl_id: str | int) -> int:
+    val_str = str(vbpl_id).strip()
+    if val_str.isdigit():
+        return int(val_str)
+    return int(hashlib.md5(val_str.encode("utf-8")).hexdigest()[:8], 16) & 0x7FFFFFFF
+
+
 def classify_catalog_changes(
     baseline: dict[str, CatalogEntry],
     current: dict[str, CatalogEntry],
@@ -82,8 +89,8 @@ def classify_catalog_changes(
         if vbpl_id not in current:
             absent_ids.append(vbpl_id)
 
-    upsert_ids = [int(e.vbpl_id) for e in new_entries + changed_entries]
-    tombstone_ids = [int(x) for x in absent_ids if str(x).isdigit()]
+    upsert_ids = [parse_vbpl_id_int(e.vbpl_id) for e in new_entries + changed_entries]
+    tombstone_ids = [parse_vbpl_id_int(x) for x in absent_ids]
 
     return CatalogChangeSet(
         upsert_ids=upsert_ids,
@@ -91,3 +98,4 @@ def classify_catalog_changes(
         tombstone_ids=tombstone_ids,
         cleared_ids=[],
     )
+
