@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from typing import Iterator
+from typing import Any, Iterator
 from pydantic import SecretStr
 from sqlalchemy import Engine, create_engine as _sa_create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
@@ -19,6 +19,16 @@ def create_engine(database_url: SecretStr) -> Engine:
 
 def create_session_factory(engine: Engine) -> sessionmaker[Session]:
     return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+
+def get_session_factory(database_url: Any = None) -> sessionmaker[Session]:
+    if database_url is None:
+        from vbpl_kb.config import Settings
+        database_url = Settings().database_url
+    if not isinstance(database_url, SecretStr):
+        database_url = SecretStr(str(database_url))
+    engine = create_engine(database_url)
+    return create_session_factory(engine)
 
 
 @contextmanager

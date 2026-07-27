@@ -35,6 +35,9 @@ class StateStore:
 def get_default_revision() -> str:
     return f"vbpl-{datetime.now(UTC).strftime('%Y-%m-%d')}"
 
+from vbpl_kb.db import get_session_factory
+from vbpl_kb.repositories import CatalogRepository, EvidenceRepository, CanonicalRepository
+
 app = typer.Typer()
 
 @app.command()
@@ -53,20 +56,20 @@ def migrate() -> None:
 
 @app.command()
 def crawl(
-    db_path: str = typer.Option("data/state.sqlite3", "--db-path"),
     revision: str = typer.Option(None, "--revision")
 ) -> None:
     settings = Settings()
-    path = Path(db_path)
-    store = StateStore.open(path)
+    session_factory = get_session_factory(settings.database_url)
     client = VBPLClient(settings)
-    
     rev = revision or get_default_revision()
-    crawler = DailyCrawler(client, store, progress=typer.echo)
-    typer.echo(f"Starting crawl for revision {rev}...")
-    summary = crawler.run(rev)
-    typer.echo(f"Crawl finished. Coverage: {summary.coverage:.2f}, Failed IDs: {summary.failed_ids}")
-
+    
+    with session_factory() as session:
+        catalog_repo = CatalogRepository(session)
+        evidence_repo = EvidenceRepository(session)
+        crawler = DailyCrawler(client, catalog=catalog_repo, evidence=evidence_repo, session=session, progress=typer.echo)
+        typer.echo(f"Starting crawl for revision {rev}...")
+        summary = crawler.run(rev)
+        typer.echo(f"Crawl finished. Coverage: {summary.coverage:.2f}, Failed IDs: {summary.failed_ids}")
 
 
 @app.command(name="publish-legacy", help="[Diagnostic-only] Direct ingestion API publisher for legacy testing.")
@@ -91,41 +94,26 @@ def publish_legacy(
 
 @app.command()
 def run_daily(
-    db_path: str = typer.Option("data/state.sqlite3", "--db-path"),
     revision: str = typer.Option(None, "--revision")
 ) -> None:
     settings = Settings()
-    path = Path(db_path)
-    store = StateStore.open(path)
+    session_factory = get_session_factory(settings.database_url)
     client = VBPLClient(settings)
-    
-    # 1. Retry any unacknowledged pending delta batches first
-    if settings.onyx_connector_id is not None:
-        pending_batches = store.pending_delta_batches()
-        if pending_batches:
-            try:
-                connector_client = OnyxConnectorClient(settings)
-                for batch in pending_batches:
-                    typer.echo(f"Retrying pending delta batch {batch['batch_id']}...")
-                    connector_client.trigger(settings.onyx_connector_id, from_beginning=False)
-                    connector_client.wait_for_indexed(settings.onyx_connector_id, settings.onyx_connector_timeout_seconds)
-                    store.acknowledge_delta_batch(batch["batch_id"])
-                    typer.echo(f"Pending delta batch {batch['batch_id']} delivered and acknowledged.")
-            except ConnectorControlError as e:
-                typer.echo(f"Daily pipeline blocked on pending delta delivery step: {e}")
-                raise typer.Exit(code=1)
-
     rev = revision or get_default_revision()
-    crawler = DailyCrawler(client, store, progress=typer.echo)
-    typer.echo(f"Running daily crawl for revision {rev}...")
-    crawl_summary = crawler.run(rev)
-    typer.echo(f"Crawl finished. Coverage: {crawl_summary.coverage:.2f}")
+    
+    with session_factory() as session:
+        catalog_repo = CatalogRepository(session)
+        evidence_repo = EvidenceRepository(session)
+        crawler = DailyCrawler(client, catalog=catalog_repo, evidence=evidence_repo, session=session, progress=typer.echo)
+        typer.echo(f"Running daily crawl for revision {rev}...")
+        crawl_summary = crawler.run(rev)
+        typer.echo(f"Crawl finished. Coverage: {crawl_summary.coverage:.2f}")
 
-    if not crawl_summary.catalog_complete or len(crawl_summary.failed_ids) > 0:
-        typer.echo(f"Daily pipeline stopped: crawl incomplete or failed (failed={len(crawl_summary.failed_ids)}).")
-        raise typer.Exit(code=1)
+        if not crawl_summary.catalog_complete or len(crawl_summary.failed_ids) > 0:
+            typer.echo(f"Daily pipeline stopped: crawl incomplete or failed (failed={len(crawl_summary.failed_ids)}).")
+            raise typer.Exit(code=1)
 
-    exporter = ReleaseExporter(store, settings.export_dir)
+    exporter = ReleaseExporter(settings.export_dir)
     try:
         typer.echo(f"Writing release candidate for {rev}...")
         candidate = exporter.write_candidate(rev)
