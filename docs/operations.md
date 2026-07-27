@@ -13,7 +13,26 @@ data-retention rules, read the [legal-data policy](legal-data-policy.md).
 
 The pipeline uses content-addressed raw evidence (`data/evidence/sha256/`), a canonical database (`vbpl-db` / PostgreSQL), immutable multi-resolution sharded releases (`data/exports/releases/<release-id>/`), and a project-owned Onyx stack. The daily job performs an incremental catalog scan and requires two consecutive complete scans before tombstoning. Connector polling uses `from_beginning=False`. The daily job leaves the prior active release and indexed corpus available when source validation or connector indexing fails.
 
-## Running CLI commands & DB migrations
+## Running the Pipeline via Docker Compose
+
+To execute the data pipeline inside Docker containers:
+
+1. **Start the Canonical PostgreSQL Database (`vbpl-db`)**:
+   ```powershell
+   docker compose -f docker-compose.vbpl.yml up -d vbpl-db
+   ```
+
+2. **Run Database Migrations (`vbpl-migrate`)**:
+   ```powershell
+   docker compose -f docker-compose.vbpl.yml run --rm vbpl-migrate
+   ```
+
+3. **Run the Daily Pipeline Container (`vbpl-pipeline`)**:
+   ```powershell
+   docker compose -f docker-compose.vbpl.yml run --rm vbpl-pipeline
+   ```
+
+## Running CLI commands locally
 
 1. **Run Database Migrations (Alembic)**:
    ```powershell
