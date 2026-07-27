@@ -5,3 +5,5 @@ data
 .onyx
 __pycache__
 *.pyc
+.env
+

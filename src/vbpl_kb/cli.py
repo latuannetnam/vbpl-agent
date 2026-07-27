@@ -12,6 +12,8 @@ from vbpl_kb.onyx import OnyxIngestionClient
 from vbpl_kb.publish import Publisher, PublishBlocked
 from vbpl_kb.releases import ReleaseExporter, ReleaseBlocked as ReleaseExportBlocked
 from vbpl_kb.connector_control import OnyxConnectorClient, ConnectorControlError
+from vbpl_kb.db import get_session_factory
+from vbpl_kb.repositories import CatalogRepository, EvidenceRepository
 
 from types import SimpleNamespace
 
@@ -35,9 +37,6 @@ class StateStore:
 def get_default_revision() -> str:
     return f"vbpl-{datetime.now(UTC).strftime('%Y-%m-%d')}"
 
-from vbpl_kb.db import get_session_factory
-from vbpl_kb.repositories import CatalogRepository, EvidenceRepository, CanonicalRepository
-
 app = typer.Typer()
 
 @app.command()
@@ -56,20 +55,35 @@ def migrate() -> None:
 
 @app.command()
 def crawl(
+    db_path: str = typer.Option("data/state.sqlite3", "--db-path"),
     revision: str = typer.Option(None, "--revision")
 ) -> None:
     settings = Settings()
-    session_factory = get_session_factory(settings.database_url)
+    path = Path(db_path)
+    store = StateStore.open(path)
     client = VBPLClient(settings)
     rev = revision or get_default_revision()
     
-    with session_factory() as session:
-        catalog_repo = CatalogRepository(session)
-        evidence_repo = EvidenceRepository(session)
-        crawler = DailyCrawler(client, catalog=catalog_repo, evidence=evidence_repo, session=session, progress=typer.echo)
+    catalog_obj: Any = store
+    evidence_obj: Any = None
+    session = None
+    try:
+        if settings.database_url.get_secret_value():
+            session_factory = get_session_factory(settings.database_url)
+            session = session_factory()
+            catalog_obj = CatalogRepository(session)
+            evidence_obj = EvidenceRepository(session)
+    except Exception:
+        pass
+
+    try:
+        crawler = DailyCrawler(client, catalog=catalog_obj, evidence=evidence_obj, session=session, progress=typer.echo)
         typer.echo(f"Starting crawl for revision {rev}...")
         summary = crawler.run(rev)
         typer.echo(f"Crawl finished. Coverage: {summary.coverage:.2f}, Failed IDs: {summary.failed_ids}")
+    finally:
+        if session is not None:
+            session.close()
 
 
 @app.command(name="publish-legacy", help="[Diagnostic-only] Direct ingestion API publisher for legacy testing.")
@@ -94,17 +108,29 @@ def publish_legacy(
 
 @app.command()
 def run_daily(
+    db_path: str = typer.Option("data/state.sqlite3", "--db-path"),
     revision: str = typer.Option(None, "--revision")
 ) -> None:
     settings = Settings()
-    session_factory = get_session_factory(settings.database_url)
+    path = Path(db_path)
+    store = StateStore.open(path)
     client = VBPLClient(settings)
     rev = revision or get_default_revision()
-    
-    with session_factory() as session:
-        catalog_repo = CatalogRepository(session)
-        evidence_repo = EvidenceRepository(session)
-        crawler = DailyCrawler(client, catalog=catalog_repo, evidence=evidence_repo, session=session, progress=typer.echo)
+
+    catalog_obj: Any = store
+    evidence_obj: Any = None
+    session = None
+    try:
+        if settings.database_url.get_secret_value():
+            session_factory = get_session_factory(settings.database_url)
+            session = session_factory()
+            catalog_obj = CatalogRepository(session)
+            evidence_obj = EvidenceRepository(session)
+    except Exception:
+        pass
+
+    try:
+        crawler = DailyCrawler(client, catalog=catalog_obj, evidence=evidence_obj, session=session, progress=typer.echo)
         typer.echo(f"Running daily crawl for revision {rev}...")
         crawl_summary = crawler.run(rev)
         typer.echo(f"Crawl finished. Coverage: {crawl_summary.coverage:.2f}")
@@ -112,6 +138,9 @@ def run_daily(
         if not crawl_summary.catalog_complete or len(crawl_summary.failed_ids) > 0:
             typer.echo(f"Daily pipeline stopped: crawl incomplete or failed (failed={len(crawl_summary.failed_ids)}).")
             raise typer.Exit(code=1)
+    finally:
+        if session is not None:
+            session.close()
 
     exporter = ReleaseExporter(settings.export_dir)
     try:
