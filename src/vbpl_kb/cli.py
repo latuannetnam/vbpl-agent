@@ -38,6 +38,20 @@ def get_default_revision() -> str:
 app = typer.Typer()
 
 @app.command()
+def migrate() -> None:
+    """Run Alembic database migrations against the configured PostgreSQL database."""
+    from alembic import command
+    from alembic.config import Config
+    settings = Settings()
+    alembic_cfg = Config("alembic.ini")
+    db_url = str(settings.database_url)
+    alembic_cfg.set_main_option("sqlalchemy.url", db_url)
+    typer.echo(f"Running Alembic migrations on database: {db_url}...")
+    command.upgrade(alembic_cfg, "head")
+    typer.echo("Alembic migrations completed successfully.")
+
+
+@app.command()
 def crawl(
     db_path: str = typer.Option("data/state.sqlite3", "--db-path"),
     revision: str = typer.Option(None, "--revision")

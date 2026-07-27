@@ -1,0 +1,7 @@
+.uv-cache
+.git
+.venv
+data
+.onyx
+__pycache__
+*.pyc
