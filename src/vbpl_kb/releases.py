@@ -33,7 +33,53 @@ class ReleaseBuilder:
         release_dir = self.export_dir / "releases" / release_id
         release_dir.mkdir(parents=True, exist_ok=True)
 
-        views_meta: dict[str, dict[str, Any]] = {}
+        if sample_documents is None:
+            active = self.read_active()
+            if active:
+                active_manifest_file = Path(active.manifest_path)
+                if not active_manifest_file.is_absolute():
+                    active_manifest_file = self.export_dir / active.manifest_path
+                if not active_manifest_file.exists():
+                    active_manifest_file = self.export_dir / "releases" / active.release_id / "manifest.json"
+
+                if active_manifest_file.exists():
+                    import shutil
+                    active_dir = active_manifest_file.parent
+                    active_data = json.loads(active_manifest_file.read_text(encoding="utf-8"))
+
+                    for item in active_dir.iterdir():
+                        if item.is_dir():
+                            shutil.copytree(item, release_dir / item.name, dirs_exist_ok=True)
+
+                    views_meta = active_data.get("views", {})
+                    total_docs = active_data.get("total_documents", sum(v.get("document_count", 0) for v in views_meta.values()))
+
+                    manifest_data = {
+                        "release_id": release_id,
+                        "revision": revision,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "total_documents": total_docs,
+                        "projection_schema_version": active_data.get("projection_schema_version", active_data.get("schema_version", 2)),
+                        "schema_version": active_data.get("schema_version", 2),
+                        "views": views_meta,
+                    }
+
+                    manifest_path = release_dir / "manifest.json"
+                    manifest_bytes = json.dumps(manifest_data, indent=2, ensure_ascii=False).encode("utf-8")
+                    manifest_path.write_bytes(manifest_bytes)
+                    manifest_hash = hashlib.sha256(manifest_bytes).hexdigest()
+
+                    return ReleaseManifest(
+                        release_id=release_id,
+                        manifest_path=manifest_path,
+                        manifest_sha256=manifest_hash,
+                        document_count=total_docs,
+                        section_count=total_docs,
+                        projection_schema_version=manifest_data["projection_schema_version"],
+                        published_at=datetime.now(timezone.utc).isoformat(),
+                    )
+
+        views_meta = {}
         sample_documents = sample_documents or {"current": [], "history": [], "evidence": []}
 
         for view in ("current", "history", "evidence"):

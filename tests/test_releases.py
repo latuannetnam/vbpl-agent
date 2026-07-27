@@ -55,3 +55,28 @@ def test_invalid_candidate_blocks_promotion(tmp_path: Path) -> None:
         manager.promote(invalid_manifest)
 
     assert not (export_dir / "active-release.json").exists()
+
+
+def test_candidate_build_copies_active_release_when_sample_documents_none(tmp_path: Path) -> None:
+    export_dir = tmp_path / "exports"
+    export_dir.mkdir()
+
+    builder = ReleaseBuilder(export_dir)
+    manifest1 = builder.build_candidate(
+        revision="rev-2026-07-26",
+        sample_documents={
+            "current": [
+                {"document_id": "vbpl:101:current:article:dieu-01", "sections": [{"section_id": "s1", "text": "Text 1", "link": "http://x"}], "link": "http://x", "metadata": {}}
+            ],
+            "history": [],
+            "evidence": [],
+        },
+    )
+    manager = ReleaseManager(export_dir)
+    manager.promote(manifest1)
+
+    manifest2 = builder.build_candidate(revision="rev-2026-07-27")
+    assert manifest2.document_count == 1
+    report = ReleaseValidator(export_dir).validate(manifest2)
+    assert report.is_valid is True
+
