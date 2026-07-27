@@ -135,7 +135,7 @@ class ReleaseValidator:
     def __init__(self, export_dir: Path | str) -> None:
         self.export_dir = Path(export_dir)
 
-    def validate(self, manifest: ReleaseManifest) -> ValidationReport:
+    def validate(self, manifest: ReleaseManifest, allow_empty: bool = False) -> ValidationReport:
         release_dir = self.export_dir / "releases" / manifest.release_id
         errors: list[str] = []
         warnings: list[str] = []
@@ -155,6 +155,24 @@ class ReleaseValidator:
             view_dir = release_dir / view
             if not view_dir.exists():
                 errors.append(f"View directory missing: {view}")
+
+        active_pointer = self.export_dir / "active-release.json"
+        if active_pointer.exists():
+            try:
+                active_data = json.loads(active_pointer.read_text(encoding="utf-8"))
+                active_manifest_path = Path(active_data.get("manifest_path", ""))
+                if not active_manifest_path.is_absolute():
+                    active_manifest_path = self.export_dir / active_data.get("manifest_path", "")
+                if not active_manifest_path.exists():
+                    active_manifest_path = self.export_dir / "releases" / active_data.get("release_id", "") / "manifest.json"
+
+                if active_manifest_path.exists():
+                    active_m = json.loads(active_manifest_path.read_text(encoding="utf-8"))
+                    active_doc_cnt = active_m.get("total_documents", sum(v.get("document_count", 0) for v in active_m.get("views", {}).values()))
+                    if active_doc_cnt > 0 and manifest.document_count < (active_doc_cnt * 0.5):
+                        errors.append(f"Candidate document count ({manifest.document_count}) dropped by >50% compared to active release ({active_doc_cnt}). Promotion blocked.")
+            except Exception:
+                pass
 
         val_report = ValidationReport(
             release_id=manifest.release_id,
