@@ -33,7 +33,7 @@ class StateStore:
         return "active-run"
 
     def get_run(self, run_id: str) -> Any:
-        return SimpleNamespace(coverage=1.0, status="completed", finished_at="2026-07-26T12:00:00Z")
+        return SimpleNamespace(run_id=run_id, coverage=1.0, status="completed", finished_at=datetime.now(UTC))
 
 def get_default_revision() -> str:
     return f"vbpl-{datetime.now(UTC).strftime('%Y-%m-%d')}"
@@ -204,12 +204,14 @@ def status(
         
     # Check freshness using the same configured window as the daily verifier.
     if run.finished_at:
-        age_seconds = (datetime.now(UTC) - run.finished_at).total_seconds()
+        finished_dt = datetime.fromisoformat(run.finished_at) if isinstance(run.finished_at, str) else run.finished_at
+        age_seconds = (datetime.now(UTC) - finished_dt).total_seconds()
+        finished_iso = finished_dt.isoformat()
         if age_seconds > settings.freshness_hours * 3600:
-            typer.echo(json.dumps({"status": "stale", "run_id": run.run_id, "finished_at": run.finished_at.isoformat()}))
+            typer.echo(json.dumps({"status": "stale", "run_id": run.run_id, "finished_at": finished_iso}))
             raise typer.Exit(code=2)
         else:
-            typer.echo(json.dumps({"status": "fresh", "run_id": run.run_id, "finished_at": run.finished_at.isoformat()}))
+            typer.echo(json.dumps({"status": "fresh", "run_id": run.run_id, "finished_at": finished_iso}))
             raise typer.Exit(code=0)
     else:
         typer.echo(json.dumps({"status": "partial", "run_id": run.run_id, "message": "Active run finished_at is missing"}))
