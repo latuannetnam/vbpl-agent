@@ -13,7 +13,8 @@ from vbpl_kb.publish import Publisher, PublishBlocked
 from vbpl_kb.releases import ReleaseExporter, ReleaseBlocked as ReleaseExportBlocked
 from vbpl_kb.connector_control import OnyxConnectorClient, ConnectorControlError
 from vbpl_kb.db import get_session_factory
-from vbpl_kb.repositories import CatalogRepository, EvidenceRepository
+from vbpl_kb.evidence import EvidenceStore
+from vbpl_kb.repositories import CatalogRepository
 
 from types import SimpleNamespace
 
@@ -65,14 +66,14 @@ def crawl(
     rev = revision or get_default_revision()
     
     catalog_obj: Any = store
-    evidence_obj: Any = None
+    evidence_dir = getattr(settings, "evidence_dir", Path("data/evidence"))
+    evidence_obj: Any = EvidenceStore(evidence_dir)
     session = None
     try:
         if settings.database_url.get_secret_value():
             session_factory = get_session_factory(settings.database_url)
             session = session_factory()
             catalog_obj = CatalogRepository(session)
-            evidence_obj = EvidenceRepository(session)
     except Exception:
         pass
 
@@ -118,14 +119,14 @@ def run_daily(
     rev = revision or get_default_revision()
 
     catalog_obj: Any = store
-    evidence_obj: Any = None
+    evidence_dir = getattr(settings, "evidence_dir", Path("data/evidence"))
+    evidence_obj: Any = EvidenceStore(evidence_dir)
     session = None
     try:
         if settings.database_url.get_secret_value():
             session_factory = get_session_factory(settings.database_url)
             session = session_factory()
             catalog_obj = CatalogRepository(session)
-            evidence_obj = EvidenceRepository(session)
     except Exception:
         pass
 

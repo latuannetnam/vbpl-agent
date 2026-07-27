@@ -65,6 +65,7 @@ services:
       - VBPL_KB_ONYX_HEALTH_PATH=${VBPL_KB_ONYX_HEALTH_PATH:-/health}
       - VBPL_KB_ONYX_REQUEST_TIMEOUT_SECONDS=${VBPL_KB_ONYX_REQUEST_TIMEOUT_SECONDS:-120}
     networks:
+      - default
       - onyx
 
 volumes:
