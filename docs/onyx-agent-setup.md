@@ -1,12 +1,12 @@
 # Onyx Agent Configuration Guide
 
 **Status:** Current
-**Applies to:** Onyx administrators configuring the running `VBPL Legal Research` agent and multi-resolution document sets.
+**Applies to:** Onyx administrators configuring the `VBPL Legal Current`, `VBPL Legal Historical`, and `VBPL Evidence Audit` agents and multi-resolution document sets.
 **Use for:** Admin-UI setup, multi-resolution connector binding, runtime feature restrictions, and grounded-answer configuration.
 **Do not use for:** Repository code changes, connector implementation, or Docker recovery.
 
 This document describes the configuration requirements for setting up the
-`VBPL Legal Research` agent in Onyx Community Edition (CE) running the Standard
+VBPL legal agents in Onyx Community Edition (CE) running the Standard
 deployment stack.
 
 ## Setup Requirements
@@ -15,22 +15,25 @@ deployment stack.
 - **Authentication**: Basic Auth with the internal administrator and pilot users.
 - **Multi-Resolution Corpus Sources**: Configure 3 persistent `VBPL Export Connector`
   sources reading the validated active release:
-  1. `vbpl_current` (`corpus_view`: `current`) bound to Document Set **`VBPL Current`**
-  2. `vbpl_history` (`corpus_view`: `history`) bound to Document Set **`VBPL History`**
-  3. `vbpl_evidence` (`corpus_view`: `evidence`) bound to Document Set **`VBPL Evidence`**
+  1. `vbpl_current` (`corpus_view`: `current`) bound to Document Set **`VBPL-current`**
+  2. `vbpl_history` (`corpus_view`: `history`) bound to Document Set **`VBPL-history`**
+  3. `vbpl_evidence` (`corpus_view`: `evidence`) bound to Document Set **`VBPL-evidence`**
 
 ## Release 1 UI boundary
 
-Release 1 uses stock Onyx CE Chat and the `VBPL Legal Research` agent only.
+Release 1 uses stock Onyx CE Chat and the VBPL legal agents (`VBPL Legal Current`, `VBPL Legal Historical`, `VBPL Evidence Audit`).
 Do not configure the standalone Onyx Search Mode/Search-only UI: it is not
 available in the CE-only scope. Users search the legal corpus through the
-agent's Internal Search action across the `VBPL Current` document set by default.
+agent's Internal Search action across the `VBPL-current` document set by default.
 
 ## Chat UI and Legal Agent Configuration
 
-Create the `VBPL Legal Research` agent in the Onyx admin UI with the following constraints:
+Create the 3 official Agent profiles (`VBPL Legal Current`, `VBPL Legal Historical`, `VBPL Evidence Audit`) in the Onyx admin UI with the following constraints:
 
-1. **Scope**: Scope primarily to the **`VBPL Current`** document set for current-law queries.
+1. **Scope**:
+   - **`VBPL Legal Current`**: Scoped strictly to **`VBPL-current`** for present-law research.
+   - **`VBPL Legal Historical`**: Scoped to **`VBPL-current`** and **`VBPL-history`** for point-in-time research and version comparison.
+   - **`VBPL Evidence Audit`**: Scoped to **`VBPL-evidence`** for provenance and evidence audit.
 2. **Disabled Features**:
    - **Web Search**: Disabled.
    - **Code Execution**: Disabled.
@@ -51,4 +54,4 @@ Create the `VBPL Legal Research` agent in the Onyx admin UI with the following c
    - For every substantive conclusion, cite the instrument number/title,
      provision heading, canonical `vbpl.vn` link, legal-status label, and
      `verified_at`.
-   - Make a current-law conclusion only for a retrieved record from `VBPL Current` whose status is fresh and is `Còn hiệu lực` or `Hết hiệu lực một phần`. For partially effective instruments, state the limitation and cite the exact provision.
+   - Make a current-law conclusion only for a retrieved record from `VBPL-current` whose status is fresh and is `Còn hiệu lực` or `Hết hiệu lực một phần`. For partially effective instruments, state the limitation and cite the exact provision.
