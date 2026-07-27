@@ -34,15 +34,8 @@ replacement, or repeal edges. A document reference alone never establishes legal
 
 ## Recovery and retention
 
-Do not delete `data/state.sqlite3`, `data/raw`, or the project Docker volume
-merely to recover a crawl. The crawler is checkpointed and resumes the same
-revision, retrying missing detail snapshots. A full recrawl and data deletion
-require explicit user approval.
+Do not delete database volumes (`vbpl-postgres-data`), retained evidence (`data/evidence/`), or release exports merely to recover a crawl. The crawler is checkpointed and resumes the same revision, retrying missing detail snapshots. A full recrawl and data deletion require explicit user approval.
 
 ## Change impact
 
-Changes to `vbpl_client.py`, `vbpl_fallback.py`, `crawl.py`, `normalize.py`,
-`models.py`, `references.py`, `state.py`, `publish.py`, `releases.py`, or
-connector metadata must add focused coverage for the affected evidence path. The
-test must demonstrate that invalid or incomplete official evidence cannot
-silently become a current-law claim or a promoted release.
+Changes to `vbpl_client.py`, `crawl.py`, `canonicalize.py`, `legal_tree.py`, `legal_semantics.py`, `db.py`, `db_models.py`, `repositories.py`, `projection.py`, `publish.py`, `releases.py`, or connector metadata must add focused coverage for the affected evidence path. The test must demonstrate that invalid or incomplete official evidence cannot silently become a current-law claim or a promoted release.

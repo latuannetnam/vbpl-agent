@@ -27,7 +27,7 @@ The pipeline uses content-addressed raw evidence (`data/evidence/sha256/`), a ca
 
 3. **Verify Schema-v2 OpenSearch Metadata Completeness**:
    ```powershell
-   uv run python -c "import sqlite3, random, subprocess, sys; sys.stdout.reconfigure(encoding='utf-8'); conn = sqlite3.connect('data/state.sqlite3'); cursor = conn.cursor(); cursor.execute('SELECT DISTINCT vbpl_id FROM raw_snapshots WHERE endpoint = \'detail\''); ids = random.sample([r[0] for r in cursor.fetchall()], 10); script = open('scripts/verify-schema-v2-index.py', encoding='utf-8').read(); cmd = ['docker', 'exec', '-i', 'vbpl-onyx-background-1', 'python', '-', *ids]; res = subprocess.run(cmd, input=script, capture_output=True, text=True, encoding='utf-8'); print(res.stdout)"
+   uv run python -c "import json, random, subprocess, sys, pathlib; sys.stdout.reconfigure(encoding='utf-8'); act = json.loads(pathlib.Path('data/exports/active-release.json').read_text()); shard = pathlib.Path('data/exports/releases') / act['release_id'] / 'current' / 'documents-00000.jsonl'; lines = open(shard, encoding='utf-8').readlines()[:100]; ids = [json.loads(l)['metadata']['official_source_id'] for l in lines if 'official_source_id' in json.loads(l)['metadata']]; sample_ids = random.sample(list(set(ids)), 10); script = open('scripts/verify-schema-v2-index.py', encoding='utf-8').read(); cmd = ['docker', 'exec', '-i', 'vbpl-onyx-background-1', 'python', '-', *sample_ids]; res = subprocess.run(cmd, input=script, capture_output=True, text=True, encoding='utf-8'); print(res.stdout)"
    ```
 
 ## Project-owned local Onyx
