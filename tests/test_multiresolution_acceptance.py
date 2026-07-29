@@ -34,7 +34,8 @@ def test_acceptance_multi_view_retrieval_routing() -> None:
         )
     ]
     auth = classify_authority("Nghị định", "Chính phủ")
-    app = build_applicability("Còn hiệu lực", verified_at=datetime(2026, 7, 26, 12, 0, 0, tzinfo=timezone.utc))
+    now_dt = datetime(2026, 7, 26, 12, 0, 0, tzinfo=timezone.utc)
+    app = build_applicability("Còn hiệu lực", verified_at=now_dt, now=now_dt)
     rels = resolve_relations(draft.version_id, None, [])
 
     bundle = CanonicalBundle(

@@ -161,11 +161,12 @@ def build_applicability(
     jurisdiction: str = "national",
     subject_tokens: Sequence[str] | None = None,
     overrides: Sequence[Any] = (),
+    now: datetime | None = None,
 ) -> ApplicabilityEnvelopeDraft:
     if isinstance(status, dict):
         status = str(status.get("name") or "")
 
-    eligibility = is_current_eligible(status, verified_at)
+    eligibility = is_current_eligible(status, verified_at, now=now)
     dt_verified = verified_at or datetime.now(timezone.utc)
     if isinstance(dt_verified, date) and not isinstance(dt_verified, datetime):
         dt_verified = datetime.combine(dt_verified, datetime.min.time(), tzinfo=timezone.utc)
